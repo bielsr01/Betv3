@@ -8,35 +8,50 @@ import Dashboard from './Dashboard';
 import BetManagement from './BetManagement';
 import Reports from './Reports';
 import { ThemeToggle } from './ThemeToggle';
-import Tesseract from 'tesseract.js';
+// Removed Tesseract.js - now using Gemini Vision API
 import { apiRequest } from '@/lib/queryClient';
 
 type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports';
 
-// OCR function to extract data from SureBet calculator images using Tesseract.js
+// OCR function using Gemini Vision API
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
   try {
-    console.log('Starting OCR processing...');
+    console.log('Starting Gemini Vision OCR processing...');
     
-    // Convert file to image URL for processing
-    const imageUrl = URL.createObjectURL(file);
-    
-    // Run OCR on the image
-    const { data: { text } } = await Tesseract.recognize(imageUrl, 'por+eng', {
-      logger: m => console.log(m)
+    // Convert file to base64
+    const base64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data:image/png;base64, prefix
+        const base64Data = result.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.readAsDataURL(file);
     });
     
-    console.log('OCR Text extracted:', text);
+    // Call backend API for Gemini Vision analysis
+    const response = await fetch('/api/ocr/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ imageBase64: base64 }),
+    });
     
-    // Clean the URL object
-    URL.revokeObjectURL(imageUrl);
+    if (!response.ok) {
+      throw new Error('Failed to analyze image with Gemini Vision');
+    }
     
-    // Parse the extracted text to get betting data
-    return parseOCRText(text);
+    const geminiData = await response.json();
+    console.log('Gemini Vision OCR result:', geminiData);
+    
+    // Convert Gemini response to our OCRData format
+    return convertGeminiToOCRFormat(geminiData);
     
   } catch (error) {
-    console.error('OCR processing failed:', error);
-    throw new Error('Falha ao processar OCR da imagem');
+    console.error('Gemini Vision OCR processing failed:', error);
+    throw new Error('Falha ao processar imagem com IA. Tente novamente.');
   }
 };
 
@@ -273,6 +288,45 @@ const parseOCRText = (text: string): OCRData => {
     console.error('Error parsing OCR text:', error);
     throw new Error('Erro ao analisar texto da imagem');
   }
+};
+
+// Helper function to convert Gemini response to our format
+const convertGeminiToOCRFormat = (geminiData: any): OCRData => {
+  // Calculate payouts: payout = stake × odds
+  const betAPayout = geminiData.betA.stake && geminiData.betA.odds ? 
+    (parseFloat(geminiData.betA.stake) * parseFloat(geminiData.betA.odds)).toFixed(2) : '0';
+  const betBPayout = geminiData.betB.stake && geminiData.betB.odds ? 
+    (parseFloat(geminiData.betB.stake) * parseFloat(geminiData.betB.odds)).toFixed(2) : '0';
+
+  return {
+    betA: {
+      bettingHouse: geminiData.betA.bettingHouse || '',
+      teamA: geminiData.betA.teamA || '',
+      teamB: geminiData.betA.teamB || '',
+      betType: geminiData.betA.betType || '',
+      selectedSide: 'A',
+      odds: geminiData.betA.odds || '0',
+      stake: geminiData.betA.stake || '0',
+      payout: betAPayout,
+      profit: geminiData.betA.profit || '0'
+    },
+    betB: {
+      bettingHouse: geminiData.betB.bettingHouse || '',
+      teamA: geminiData.betB.teamA || '',
+      teamB: geminiData.betB.teamB || '',
+      betType: geminiData.betB.betType || '',
+      selectedSide: 'B',
+      odds: geminiData.betB.odds || '0',
+      stake: geminiData.betB.stake || '0',
+      payout: betBPayout,
+      profit: geminiData.betB.profit || '0'
+    },
+    gameDate: geminiData.gameDate || new Date().toISOString().split('T')[0],
+    gameTime: geminiData.gameTime || '00:00',
+    sport: geminiData.sport || '',
+    league: geminiData.league || '',
+    totalProfitPercentage: geminiData.totalProfitPercentage || '0'
+  };
 };
 
 export default function BetTracker() {
