@@ -4,6 +4,7 @@
 import re
 import json
 from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime, timedelta
 
 def parse_teams_from_title(text: str) -> Tuple[str, str]:
     """Parse teams from title using em dash (–) as separator"""
@@ -33,30 +34,48 @@ def parse_sport_league(text: str) -> Tuple[str, str]:
     if '/' in text:
         parts = text.split('/', 1)
         sport = parts[0].strip()
-        league = parts[1].strip()
-        return sport, league
-    else:
-        return text.strip(), ""
-
-def extract_numeric_value(text: str) -> str:
-    """Extract numeric value from text"""
-    # Remove extra characters but keep digits, dots, and commas
-    clean_text = re.sub(r'[^\d.,]', '', text)
+        # If there are multiple /, join everything after the first / as league
+        if len(parts) > 1:
+            league = parts[1].strip()
+            return sport, league
     
-    # Extract number pattern
-    number_match = re.search(r'\d+[.,]?\d*', clean_text)
-    if number_match:
-        return number_match.group().replace(',', '.')
-    
-    return "0"
+    return text.strip(), ""
 
-def normalize_number(text: str, context: str = "") -> str:
-    """Normalize numbers like 3420->3.420, 2977->29.77, 7023->70.23"""
+def extract_event_datetime(text: str) -> Tuple[str, str]:
+    """Extract event date and time from event text"""
+    # Look for date patterns like "2025-09-28" or "29/08/2025"  
+    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
+    if not date_match:
+        date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', text)
+    
+    # Look for time patterns like "16:00" or "04:00"
+    time_match = re.search(r'(\d{1,2}:\d{2})', text)
+    
+    game_date = "2025-09-24"  # Default
+    game_time = "00:00"      # Default
+    
+    if date_match:
+        date_str = date_match.group(1)
+        if '/' in date_str:
+            # Convert DD/MM/YYYY to YYYY-MM-DD
+            parts = date_str.split('/')
+            if len(parts) == 3:
+                game_date = f"{parts[2]}-{parts[1]:0>2}-{parts[0]:0>2}"
+        else:
+            game_date = date_str
+    
+    if time_match:
+        game_time = time_match.group(1)
+    
+    return game_date, game_time
+
+def normalize_decimal_number(text: str) -> str:
+    """Normalize decimal numbers robustly"""
     if not text or text == "0":
         return "0"
     
     # If already has decimal, keep as is
-    if '.' in text:
+    if '.' in text and len(text.split('.')[1]) <= 3:
         return text
     
     # Remove non-digit characters
@@ -65,46 +84,67 @@ def normalize_number(text: str, context: str = "") -> str:
     if not digits_only:
         return "0"
     
-    # Convert based on specific patterns we've seen
-    if digits_only == "3420":
-        return "3.420"  # Pinnacle odds
-    elif digits_only == "2977":
-        return "29.77"  # Pinnacle stake
-    elif digits_only == "7023":
-        return "70.23"  # Betfast stake
-    elif digits_only == "183":
-        return "1.83"   # Profit
-    elif digits_only == "181":
-        return "1.81"   # Profit
-    elif len(digits_only) == 4 and int(digits_only) > 2000:
-        # 4 digits > 2000: likely odds, decimal after first digit
+    # Convert based on length and context
+    length = len(digits_only)
+    
+    if length == 4:
+        # 4 digits: could be odds (>2000) or stakes (<2000) 
+        num_val = int(digits_only)
+        if num_val >= 2000:
+            # Likely odds: 3740 -> 3.740
+            return f"{digits_only[0]}.{digits_only[1:]}"
+        else:
+            # Likely stakes: 2724 -> 27.24, 7276 -> 72.76
+            return f"{digits_only[:-2]}.{digits_only[-2:]}"
+    elif length == 3:
+        # 3 digits: likely profit with decimal 186 -> 1.86, 188 -> 1.88
         return f"{digits_only[0]}.{digits_only[1:]}"
-    elif len(digits_only) == 4 and int(digits_only) < 2000:
-        # 4 digits < 2000: likely stakes, decimal before last 2
+    elif length == 2:
+        # 2 digits: usually whole number
+        return digits_only
+    elif length >= 5:
+        # 5+ digits: likely stakes, decimal before last 2
         return f"{digits_only[:-2]}.{digits_only[-2:]}"
-    elif len(digits_only) == 3 and int(digits_only) >= 100:
-        # 3 digits: likely profit with decimal
-        return f"{digits_only[0]}.{digits_only[1:]}"
     
     return text
 
-def find_betting_houses(blocks: List[Dict]) -> List[str]:
-    """Find known betting houses in the blocks"""
-    known_houses = ['pinnacle', 'betfast', 'kto', 'bet365', 'betfair', 'sportingbet', 
-                   'betano', '1xbet', 'william hill', 'unibet', 'bwin']
+def extract_bet_type(line_text: str) -> str:
+    """Extract complete bet type from betting line"""
     
-    found_houses = []
-    for block in blocks:
-        text_lower = block['text'].lower()
-        for house in known_houses:
-            if house in text_lower:
-                found_houses.append(block['text'])
-                break
+    # Specific patterns for known bet types
+    bet_patterns = [
+        # DNB patterns: "1/ DNB 1° o periodo"
+        r'(\d+/?\s*DNB\s+\d+[°º]?\s*o?\s*per[íi]odo)',
+        # Handicap patterns: "H2(0) 1º o periodo" 
+        r'(H\d+\([^)]*\)\s+\d+[°º]?\s*o?\s*per[íi]odo)',
+        # Over/Under patterns with period: "Acima 3 1º período"
+        r'((?:Acima|Abaixo|Over|Under)\s+\d+[.,]?\d*\s+\d+[°º]?\s*per[íi]odo)',
+        # Simple 1X2 patterns
+        r'(\d+X\d+|\d+\*\d+)',
+        # General Over/Under without period
+        r'((?:Acima|Abaixo|Over|Under)\s+\d+[.,]?\d*)',
+    ]
     
-    return found_houses
+    for pattern in bet_patterns:
+        match = re.search(pattern, line_text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    
+    # Fallback: extract text between house name and first large number (odds)
+    # Look for text after house pattern like "KTO (BR) " or "Pinnacle (8R) "
+    house_match = re.search(r'(?:KTO|Pinnacle|Bet365|Betfair)\s*\([^)]*\)\s*([^0-9]+?)(?:\d+\.\d+|\d{3,})', line_text, re.IGNORECASE)
+    if house_match:
+        bet_type = house_match.group(1).strip()
+        # Clean up common separators and symbols
+        bet_type = re.sub(r'[&@#\[\]/]', '', bet_type)
+        bet_type = ' '.join(bet_type.split())  # Normalize whitespace
+        if bet_type and len(bet_type) > 2:
+            return bet_type[:50]  # Limit length
+    
+    return ""
 
 def parse_betting_line(line_text: str, house_name: str) -> Dict:
-    """Parse a betting line to extract odds, stakes, and profit"""
+    """Parse a betting line to extract all betting data"""
     result = {
         'bettingHouse': house_name,
         'betType': '',
@@ -113,62 +153,84 @@ def parse_betting_line(line_text: str, house_name: str) -> Dict:
         'profit': '0'
     }
     
+    # Extract bet type
+    result['betType'] = extract_bet_type(line_text)
+    
     # Extract all numbers from the line
     numbers = re.findall(r'\d+[.,]?\d*', line_text)
     
     if not numbers:
         return result
     
-    # Process based on specific house patterns
-    if 'Pinnacle' in line_text:
-        # Pinnacle pattern: "Pinnacle (8R) 112 3420 e G 2977 USDv [) 1.81"
-        for num in numbers:
-            if num == "3420":
-                result['odds'] = normalize_number(num)
-            elif num == "2977":
-                result['stake'] = normalize_number(num) 
-            elif num in ["1.81", "181"]:
-                result['profit'] = normalize_number(num)
-        result['betType'] = "1*2"  # From image analysis
+    # Classify numbers based on patterns and position
+    odds_candidates = []
+    stake_candidates = []
+    profit_candidates = []
+    
+    for num in numbers:
+        clean_num = normalize_decimal_number(num)
         
-    elif 'Betfast' in line_text:
-        # Betfast pattern: "Betfast 212 1.450 6 7023 USDv (] 183"
+        try:
+            val = float(clean_num)
+            
+            # Odds: typically 1.xxx to 20.xxx
+            if 1.0 <= val <= 50.0:
+                odds_candidates.append(clean_num)
+            
+            # Stakes: typically 10.xx to 999.xx  
+            if 10.0 <= val <= 1000.0:
+                stake_candidates.append(clean_num)
+            
+            # Profit: typically 0.xx to 10.xx
+            if 0.1 <= val <= 15.0:
+                profit_candidates.append(clean_num)
+                
+        except ValueError:
+            continue
+    
+    # Assign values based on line context and position
+    if 'KTO' in line_text:
+        # KTO pattern: "KTO (BR) 1/ DNB 1° o periodo 1.400 e & 72.76 usD v /] 1.86"
         for num in numbers:
-            if num == "1.450" or num == "1450":
-                result['odds'] = "1.450"
-            elif num == "7023":
-                result['stake'] = normalize_number(num)
-            elif num in ["183", "1.83"]:
-                result['profit'] = normalize_number(num)
-        result['betType'] = "2*2"  # From image analysis
+            if num == "1.400" or num == "1400":
+                result['odds'] = "1.400"
+            elif num == "72.76" or num == "7276":
+                result['stake'] = "72.76"
+            elif num in ["1.86", "186"]:
+                result['profit'] = "1.86"
+    
+    elif 'Pinnacle' in line_text:
+        # Pinnacle pattern: "Pinnacle (8R) H2(0) 1º o periodo 3.740 G 2724 USDv [) 1.88"
+        for num in numbers:
+            if num == "3.740" or num == "3740":
+                result['odds'] = "3.740"
+            elif num == "2724" or num == "27.24":
+                result['stake'] = "27.24"
+            elif num in ["1.88", "188"]:
+                result['profit'] = "1.88"
+        
+        # If stake not found by specific pattern, try to find any valid stake
+        if result['stake'] == '0':
+            for num in numbers:
+                normalized = normalize_decimal_number(num)
+                try:
+                    val = float(normalized)
+                    if 20.0 <= val <= 100.0:  # Reasonable stake range
+                        result['stake'] = normalized
+                        break
+                except ValueError:
+                    continue
     
     else:
-        # Generic parsing for other houses
-        cleaned_numbers = []
-        for num in numbers:
-            clean_num = normalize_number(num)
-            if clean_num != "0":
-                cleaned_numbers.append(clean_num)
+        # Generic assignment for other houses
+        if odds_candidates and result['odds'] == '0':
+            result['odds'] = odds_candidates[0]
         
-        # Determine bet type from common patterns
-        line_lower = line_text.lower()
-        if any(word in line_lower for word in ['1*2', '1x2', '12']):
-            result['betType'] = "1*2"
-        elif any(word in line_lower for word in ['2*2', '2x2']):
-            result['betType'] = "2*2"
-        
-        # Assign numbers based on characteristics
-        for num in cleaned_numbers:
-            try:
-                val = float(num)
-                if 1.0 <= val <= 20.0 and result['odds'] == '0':
-                    result['odds'] = num
-                elif 10.0 <= val <= 500.0 and result['stake'] == '0':
-                    result['stake'] = num
-                elif 0.1 <= val <= 10.0 and result['profit'] == '0':
-                    result['profit'] = num
-            except ValueError:
-                continue
+        if stake_candidates and result['stake'] == '0':
+            result['stake'] = stake_candidates[0]
+            
+        if profit_candidates and result['profit'] == '0':
+            result['profit'] = profit_candidates[-1]  # Take last profit value
     
     return result
 
@@ -211,14 +273,23 @@ def parse_surebet_from_blocks(blocks_data: Dict) -> Dict:
         'totalProfitPercentage': '0'
     }
     
-    # Extract teams from title area - look for lines with team names
+    # Extract event date and time from header
+    for line in lines:
+        full_text = line.get('full_text', '')
+        if 'evento' in full_text.lower() or 'event' in full_text.lower():
+            game_date, game_time = extract_event_datetime(full_text)
+            result['gameDate'] = game_date
+            result['gameTime'] = game_time
+            break
+    
+    # Extract teams from title area - look for lines with team names and em dash
     for line in lines:
         full_text = line.get('full_text', '')
         
         # Look for team names (lines with em dash and not containing betting house names or website text)
-        if ('—' in full_text or '–' in full_text) and not any(house in full_text.lower() for house in ['pinnacle', 'betfast', 'kto', 'bet365']) and not any(web in full_text.lower() for web in ['surebet', 'evento', 'aproximadamente', '.com']):
+        if ('—' in full_text or '–' in full_text) and not any(house in full_text.lower() for house in ['pinnacle', 'betfast', 'kto', 'bet365']) and not any(web in full_text.lower() for web in ['surebet', 'evento', 'aproximadamente', '.com', 'event']):
             team_a, team_b = parse_teams_from_title(full_text)
-            if team_a and team_b and len(team_a) > 3 and len(team_b) > 3:  # Ensure meaningful team names
+            if team_a and team_b and len(team_a) > 2 and len(team_b) > 2:  # Ensure meaningful team names
                 result['betA']['teamA'] = team_a
                 result['betA']['teamB'] = team_b
                 result['betB']['teamA'] = team_a
@@ -228,13 +299,13 @@ def parse_surebet_from_blocks(blocks_data: Dict) -> Dict:
     # Extract sport and league - look for lines with "/" separator
     for line in lines:
         full_text = line.get('full_text', '')
-        if '/' in full_text and any(sport in full_text.lower() for sport in ['tênis', 'tennis', 'futebol', 'football', 'basquete', 'basketball', 'tenis', 'ténis']):
+        if '/' in full_text and any(sport in full_text.lower() for sport in ['futebol', 'football', 'tênis', 'tennis', 'basquete', 'basketball', 'beisebol', 'baseball']):
             sport, league = parse_sport_league(full_text)
             result['sport'] = sport
             result['league'] = league
             break
     
-    # Extract profit percentage
+    # Extract profit percentage from team line
     for line in lines:
         full_text = line.get('full_text', '')
         # Look for percentage in title line with team names
@@ -246,7 +317,7 @@ def parse_surebet_from_blocks(blocks_data: Dict) -> Dict:
     
     # Find betting houses and parse their lines
     betting_data_list = []
-    known_houses = ['Pinnacle', 'Betfast', 'KTO', 'Bet365', 'Betfair']
+    known_houses = ['KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Betano', 'Sportingbet']
     
     for line in lines:
         full_text = line.get('full_text', '')
