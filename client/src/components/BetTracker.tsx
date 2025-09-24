@@ -91,8 +91,8 @@ const parseOCRText = (text: string): OCRData => {
       result.gameTime = `${hour.padStart(2, '0')}:${minute}`;
     }
     
-    // Extract teams - support multiple dash types (em-dash, en-dash, hyphen)
-    const teamPattern = /([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)\s*[—–-]\s*([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)/i;
+    // Extract teams - detect ONLY the specific en dash "–" from SureBet
+    const teamPattern = /([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)\s*–\s*([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)/i;
     const teamsMatch = text.match(teamPattern);
     if (teamsMatch) {
       result.betA.teamA = teamsMatch[1].trim();
@@ -100,10 +100,10 @@ const parseOCRText = (text: string): OCRData => {
       result.betB.teamA = teamsMatch[1].trim();
       result.betB.teamB = teamsMatch[2].trim();
     } else {
-      // Fallback: find any line with dashes and split
-      const dashLine = lines.find(line => /[\u2014\u2013-]/.test(line));
+      // Fallback: find line with the specific en dash "–" and split
+      const dashLine = lines.find(line => /–/.test(line));
       if (dashLine) {
-        const parts = dashLine.split(/[\u2014\u2013-]/).map(p => p.trim());
+        const parts = dashLine.split('–').map(p => p.trim());
         if (parts.length >= 2) {
           result.betA.teamA = parts[0];
           result.betA.teamB = parts[1];
