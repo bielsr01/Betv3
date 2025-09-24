@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Home, Upload, BarChart3, Settings, Target, FileText } from 'lucide-react';
 import { OCRData, Bet } from '@shared/schema';
@@ -216,70 +216,80 @@ export default function BetTracker() {
     }
   };
 
-  const handleOCRConfirm = (data: OCRData) => {
-    // Generate pair ID for the two bets
-    const pairId = Math.random().toString(36).substr(2, 9);
-    
-    // Calculate pair metrics
-    const stakeA = Number(data.betA.stake);
-    const stakeB = Number(data.betB.stake);
-    const payoutA = Number(data.betA.payout);
-    const payoutB = Number(data.betB.payout);
-    const totalStake = stakeA + stakeB;
-    // Profit percentage if this bet wins: (winning payout - total invested) / total invested
-    const profitPercentageA = totalStake > 0 ? ((payoutA - totalStake) / totalStake) * 100 : 0;
-    const profitPercentageB = totalStake > 0 ? ((payoutB - totalStake) / totalStake) * 100 : 0;
-    
-    // Create bet A //todo: replace with API call
-    const betA: Bet = {
-      id: Math.random().toString(36).substr(2, 9),
-      bettingHouse: data.betA.bettingHouse,
-      teamA: data.betA.teamA,
-      teamB: data.betA.teamB,
-      betType: data.betA.betType,
-      selectedSide: data.betA.selectedSide,
-      odds: data.betA.odds,
-      stake: data.betA.stake,
-      payout: data.betA.payout,
-      gameDate: data.gameDate,
-      status: 'pending',
-      isVerified: true,
-      pairId: pairId,
-      betPosition: 'A',
-      totalPairStake: totalStake.toString(),
-      profitPercentage: profitPercentageA.toString(),
-      createdAt: new Date()
-    };
-    
-    // Create bet B //todo: replace with API call
-    const betB: Bet = {
-      id: Math.random().toString(36).substr(2, 9),
-      bettingHouse: data.betB.bettingHouse,
-      teamA: data.betB.teamA,
-      teamB: data.betB.teamB,
-      betType: data.betB.betType,
-      selectedSide: data.betB.selectedSide,
-      odds: data.betB.odds,
-      stake: data.betB.stake,
-      payout: data.betB.payout,
-      gameDate: data.gameDate,
-      status: 'pending',
-      isVerified: true,
-      pairId: pairId,
-      betPosition: 'B',
-      totalPairStake: totalStake.toString(),
-      profitPercentage: profitPercentageB.toString(),
-      createdAt: new Date()
-    };
-    
-    setBets(prev => [betA, betB, ...prev]);
-    
-    // Clean up and navigate to dashboard
-    setCurrentImageUrl('');
-    setCurrentOCRData(null);
-    setCurrentState('dashboard');
-    
-    console.log('Bet pair saved:', { betA, betB });
+  const handleOCRConfirm = async (data: OCRData) => {
+    try {
+      // Generate pair ID for the two bets
+      const pairId = Math.random().toString(36).substr(2, 9);
+      
+      // Calculate pair metrics
+      const stakeA = Number(data.betA.stake);
+      const stakeB = Number(data.betB.stake);
+      const payoutA = Number(data.betA.payout);
+      const payoutB = Number(data.betB.payout);
+      const totalStake = stakeA + stakeB;
+      // Profit percentage if this bet wins: (winning payout - total invested) / total invested
+      const profitPercentageA = totalStake > 0 ? ((payoutA - totalStake) / totalStake) * 100 : 0;
+      const profitPercentageB = totalStake > 0 ? ((payoutB - totalStake) / totalStake) * 100 : 0;
+      
+      // Create bet A via API
+      const betAData = {
+        bettingHouse: data.betA.bettingHouse,
+        teamA: data.betA.teamA,
+        teamB: data.betA.teamB,
+        betType: data.betA.betType,
+        selectedSide: data.betA.selectedSide,
+        odds: data.betA.odds,
+        stake: data.betA.stake,
+        payout: data.betA.payout,
+        gameDate: data.gameDate,
+        status: 'pending' as const,
+        isVerified: true,
+        pairId: pairId,
+        betPosition: 'A' as const,
+        totalPairStake: totalStake.toString(),
+        profitPercentage: profitPercentageA.toString()
+      };
+      
+      // Create bet B via API
+      const betBData = {
+        bettingHouse: data.betB.bettingHouse,
+        teamA: data.betB.teamA,
+        teamB: data.betB.teamB,
+        betType: data.betB.betType,
+        selectedSide: data.betB.selectedSide,
+        odds: data.betB.odds,
+        stake: data.betB.stake,
+        payout: data.betB.payout,
+        gameDate: data.gameDate,
+        status: 'pending' as const,
+        isVerified: true,
+        pairId: pairId,
+        betPosition: 'B' as const,
+        totalPairStake: totalStake.toString(),
+        profitPercentage: profitPercentageB.toString()
+      };
+      
+      // Save both bets via API
+      const responseA = await apiRequest('POST', '/api/bets', betAData);
+      const responseB = await apiRequest('POST', '/api/bets', betBData);
+      
+      const betA = await responseA.json();
+      const betB = await responseB.json();
+      
+      console.log('Bet pair saved via API:', { betA, betB });
+      
+      // Clean up and navigate to dashboard
+      setCurrentImageUrl('');
+      setCurrentOCRData(null);
+      setCurrentState('dashboard');
+      
+      // Reload bets to show the new ones
+      await loadBets();
+      
+    } catch (error) {
+      console.error('Error saving bets:', error);
+      // Handle error - could show toast notification
+    }
   };
 
   const handleOCRCancel = () => {
@@ -288,33 +298,30 @@ export default function BetTracker() {
     setCurrentState('upload');
   };
 
-  const handleResolveBet = (betId: string, status: 'won' | 'lost' | 'returned') => {
-    //todo: replace with API call
-    setBets(prev => {
-      const updatedBets = prev.map(bet => {
-        if (bet.id === betId) {
-          return { ...bet, status };
-        }
-        return bet;
-      });
-      
-      // If this bet won, automatically set its pair to lost (for opposing bets)
-      if (status === 'won') {
-        const resolvedBet = prev.find(bet => bet.id === betId);
-        if (resolvedBet?.pairId) {
-          return updatedBets.map(bet => {
-            if (bet.pairId === resolvedBet.pairId && bet.id !== betId && bet.status === 'pending') {
-              return { ...bet, status: 'lost' };
-            }
-            return bet;
-          });
-        }
-      }
-      
-      return updatedBets;
-    });
-    console.log(`Bet ${betId} resolved as: ${status}`);
+  const handleResolveBet = async (betId: string, status: 'won' | 'lost' | 'returned') => {
+    try {
+      await apiRequest('PUT', `/api/bets/${betId}/status`, { status });
+      await loadBets(); // Reload bets after status update
+      console.log(`Bet ${betId} resolved as: ${status}`);
+    } catch (error) {
+      console.error('Error updating bet status:', error);
+    }
   };
+  
+  const loadBets = async () => {
+    try {
+      const response = await apiRequest('GET', '/api/bets');
+      const betsData = await response.json();
+      setBets(betsData);
+    } catch (error) {
+      console.error('Error loading bets:', error);
+    }
+  };
+  
+  // Load bets on component mount
+  useEffect(() => {
+    loadBets();
+  }, []);
 
   const handleAddBet = () => {
     setCurrentState('upload');
@@ -355,6 +362,12 @@ export default function BetTracker() {
             />
           </div>
         ) : null;
+      
+      case 'management':
+        return <BetManagement />;
+      
+      case 'reports':
+        return <Reports />;
       
       case 'dashboard':
       default:
