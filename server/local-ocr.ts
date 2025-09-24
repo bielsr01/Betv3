@@ -52,7 +52,6 @@ export async function analyzeSureBetImageLocal(imageBase64: string): Promise<Sur
       lang: 'eng+por', // English + Portuguese support
       oem: 1, // LSTM neural net mode (fastest + accurate)
       psm: 6, // Assume uniform text block
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%-+()[]ÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü ',
     };
 
     // Extract text using optimized Tesseract
