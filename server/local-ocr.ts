@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import sharp from 'sharp';
-import tesseract from 'node-tesseract-ocr';
+import { spawn } from 'child_process';
 
 export interface SureBetOCRResult {
   betA: {
@@ -34,167 +34,76 @@ export async function analyzeSureBetImageLocal(imageBase64: string): Promise<Sur
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(imageBase64, 'base64');
     
-    // Optimize image for better OCR results - increase contrast and clarity
+    // Optimize image for EasyOCR - moderate processing for better accuracy
     const processedBuffer = await sharp(imageBuffer)
-      .resize(1600, 2000, { fit: 'inside', withoutEnlargement: true }) // Optimal size for text recognition
-      .grayscale() // Convert to grayscale for better text recognition
+      .resize(1800, 2400, { fit: 'inside', withoutEnlargement: true }) // Larger size for EasyOCR
       .normalize() // Enhance contrast
-      .sharpen() // Sharpen edges for better character recognition
+      .sharpen({ sigma: 1 }) // Light sharpening
       .png({ quality: 100 }) // High quality PNG for clear text
       .toBuffer();
 
-    // Save processed image temporarily
-    const tempPath = path.join('/tmp', `surebet_${Date.now()}.png`);
-    await fs.writeFile(tempPath, processedBuffer);
+    // Convert to base64 for Python script
+    const processedBase64 = processedBuffer.toString('base64');
 
-    // Configure Tesseract for optimal performance with SureBet images
-    const config = {
-      lang: 'eng+por', // English + Portuguese support
-      oem: 1, // LSTM neural net mode (fastest + accurate)
-      psm: 6, // Assume uniform text block
-    };
-
-    // Extract text using optimized Tesseract
-    const extractedText = await tesseract.recognize(tempPath, config);
-    console.log('Extracted OCR text:', extractedText);
-
-    // Clean up temp file
-    try {
-      await fs.unlink(tempPath);
-    } catch (error) {
-      console.warn('Failed to clean up temp file:', error);
-    }
-
-    // Parse the extracted text to structured data
-    const result = parseSureBetText(extractedText);
+    // Run EasyOCR Python script
+    const result = await runEasyOCR(processedBase64);
     
     return result;
   } catch (error) {
-    console.error('Local OCR processing failed:', error);
-    throw new Error('Failed to process image with local OCR');
+    console.error('EasyOCR processing failed:', error);
+    throw new Error('Failed to process image with EasyOCR');
   }
 }
 
-function parseSureBetText(text: string): SureBetOCRResult {
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  
-  // Initialize result with defaults
-  const result: SureBetOCRResult = {
-    betA: {
-      bettingHouse: '',
-      teamA: '',
-      teamB: '',
-      betType: '',
-      odds: '0',
-      stake: '0',
-      profit: '0'
-    },
-    betB: {
-      bettingHouse: '',
-      teamA: '',
-      teamB: '',
-      betType: '',
-      odds: '0',
-      stake: '0',
-      profit: '0'
-    },
-    gameDate: new Date().toISOString().split('T')[0],
-    gameTime: '00:00',
-    sport: '',
-    league: '',
-    totalProfitPercentage: '0'
-  };
-
-  try {
-    // Extract teams (looking for pattern: "Team1 – Team2" or "Team1 - Team2")
-    for (const line of lines.slice(0, 5)) {
-      const teamMatch = line.match(/([A-Za-zÀ-ÿ\s0-9.&()]+?)\s*[-–—]\s*([A-Za-zÀ-ÿ\s0-9.&()]+)/);
-      if (teamMatch && !line.includes('%')) {
-        result.betA.teamA = teamMatch[1].trim();
-        result.betA.teamB = teamMatch[2].trim();
-        result.betB.teamA = teamMatch[1].trim();
-        result.betB.teamB = teamMatch[2].trim();
-        break;
+async function runEasyOCR(imageBase64: string): Promise<SureBetOCRResult> {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(__dirname, 'easyocr-service.py');
+    const pythonProcess = spawn('python3', [scriptPath, imageBase64]);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (stderr) {
+        console.log('EasyOCR debug info:', stderr);
       }
-    }
-
-    // Extract sport and league
-    const sportMatch = text.match(/(Futebol|Basketball|Basquete|Tennis|Tênis|Volleyball|Volei)[\/\s]*([^\n\r]+)/i);
-    if (sportMatch) {
-      result.sport = sportMatch[1];
-      result.league = sportMatch[2].trim();
-    }
-
-    // Extract total profit percentage - FIXED: Extract just the number
-    const profitMatch = text.match(/(\d+\.\d+)%/);
-    if (profitMatch) {
-      result.totalProfitPercentage = profitMatch[1]; // Extract only the number, not the %
-    }
-
-    // Extract date and time
-    const dateMatch = text.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (dateMatch) {
-      result.gameDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
-    }
-
-    const timeMatch = text.match(/(\d{1,2}):(\d{2})/);
-    if (timeMatch) {
-      result.gameTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
-    }
-
-    // Extract betting houses and financial data
-    const bettingHouses = ['Pinnacle', 'BravoBet', 'Betfast', 'Blaze', 'KTO', 'Betano', 'VBet', 'MarjoSports', 'Betnacional', 'Aposta1', 'SuperBet'];
-    const betLines: string[] = [];
-
-    // Find lines containing betting houses and USD amounts
-    for (const line of lines) {
-      for (const house of bettingHouses) {
-        if (line.toLowerCase().includes(house.toLowerCase()) && (line.includes('USD') || line.includes('$'))) {
-          betLines.push(line);
-          break;
+      
+      if (code !== 0) {
+        console.error('EasyOCR process failed with code:', code);
+        console.error('Error output:', stderr);
+        reject(new Error(`EasyOCR process failed with exit code ${code}`));
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(stdout.trim());
+        
+        if (result.error) {
+          reject(new Error(result.error));
+          return;
         }
+        
+        console.log('EasyOCR result:', result);
+        resolve(result);
+      } catch (parseError) {
+        console.error('Failed to parse EasyOCR output:', stdout);
+        reject(new Error('Failed to parse EasyOCR output'));
       }
-    }
-
-    // Parse betting data from identified lines
-    if (betLines.length >= 1) {
-      parseBetLine(betLines[0], result.betA, bettingHouses);
-    }
-    if (betLines.length >= 2) {
-      parseBetLine(betLines[1], result.betB, bettingHouses);
-    }
-
-    return result;
-  } catch (error) {
-    console.error('Error parsing SureBet text:', error);
-    return result; // Return partial results even if parsing fails
-  }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      console.error('Failed to start EasyOCR process:', error);
+      reject(new Error('Failed to start EasyOCR process'));
+    });
+  });
 }
 
-function parseBetLine(line: string, bet: any, bettingHouses: string[]) {
-  try {
-    // Extract betting house
-    for (const house of bettingHouses) {
-      if (line.toLowerCase().includes(house.toLowerCase())) {
-        bet.bettingHouse = house;
-        break;
-      }
-    }
-
-    // Extract numerical values (odds, stake, profit)
-    const numbers = line.match(/\d+\.\d+/g);
-    if (numbers && numbers.length >= 3) {
-      bet.odds = numbers[0];
-      bet.stake = numbers[1];
-      bet.profit = numbers[2];
-    }
-
-    // Extract bet type (text between house and first number)
-    const betTypeMatch = line.match(new RegExp(`(?:${bettingHouses.join('|')})\\s*(?:\\([^)]+\\))?\\s+(.+?)\\s+\\d+\\.\\d+`, 'i'));
-    if (betTypeMatch) {
-      bet.betType = betTypeMatch[1].trim();
-    }
-  } catch (error) {
-    console.error('Error parsing bet line:', error);
-  }
-}
+// Remove old Tesseract parsing functions - not needed with EasyOCR
