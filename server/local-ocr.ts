@@ -50,7 +50,7 @@ export async function analyzeSureBetImageLocal(imageBase64: string): Promise<Sur
     
     return result;
   } catch (error) {
-    console.error('PaddleOCR processing failed:', error);
+    console.error('Tesseract OCR processing failed:', error);
     throw new Error('Failed to process image with Tesseract OCR');
   }
 }
@@ -166,7 +166,7 @@ function parseSureBetText(text: string): SureBetOCRResult {
   try {
     // Extract teams (looking for pattern: "Team1 – Team2" or "Team1 - Team2" or "Team1 vs Team2")
     for (const line of lines.slice(0, 10)) {
-      const teamMatch = line.match(/([A-Za-zÀ-ÿ\s0-9.&()]+?)\s*[-–—vs]\s*([A-Za-zÀ-ÿ\s0-9.&()]+)/i);
+      const teamMatch = line.match(/([A-Za-zÀ-ÿ\s0-9.&()]+?)\s*(?:-|–|—|vs|x)\s*([A-Za-zÀ-ÿ\s0-9.&()]+)/i);
       if (teamMatch && !line.includes('%') && teamMatch[1].length > 2 && teamMatch[2].length > 2) {
         result.betA.teamA = teamMatch[1].trim();
         result.betA.teamB = teamMatch[2].trim();
