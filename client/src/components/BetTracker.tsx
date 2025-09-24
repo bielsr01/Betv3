@@ -40,6 +40,11 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
   }
 };
 
+// Helper function to normalize numbers from OCR (handles commas, all spaces)
+const sanitizeNumber = (str: string): string => {
+  return str.replace(/[\u00A0\u2009\u202F\s]/g, '').replace(/,/g, '.');
+};
+
 // Function to parse OCR text and extract betting information
 const parseOCRText = (text: string): OCRData => {
   console.log('Parsing OCR text:', text);
@@ -86,15 +91,26 @@ const parseOCRText = (text: string): OCRData => {
       result.gameTime = `${hour.padStart(2, '0')}:${minute}`;
     }
     
-    // Extract teams - improved regex to handle hyphens in team names
-    // Look for pattern: Team A (possibly with hyphens) — Team B (possibly with hyphens)
-    const teamPattern = /([A-Za-z][A-Za-z\s\-]+?)\s*[—–]\s*([A-Za-z][A-Za-z\s\-]+?)(?=\s|\d|%|$)/i;
+    // Extract teams - support multiple dash types (em-dash, en-dash, hyphen)
+    const teamPattern = /([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)\s*[—–-]\s*([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)/i;
     const teamsMatch = text.match(teamPattern);
     if (teamsMatch) {
       result.betA.teamA = teamsMatch[1].trim();
       result.betA.teamB = teamsMatch[2].trim();
       result.betB.teamA = teamsMatch[1].trim();
       result.betB.teamB = teamsMatch[2].trim();
+    } else {
+      // Fallback: find any line with dashes and split
+      const dashLine = lines.find(line => /[\u2014\u2013-]/.test(line));
+      if (dashLine) {
+        const parts = dashLine.split(/[\u2014\u2013-]/).map(p => p.trim());
+        if (parts.length >= 2) {
+          result.betA.teamA = parts[0];
+          result.betA.teamB = parts[1];
+          result.betB.teamA = parts[0];
+          result.betB.teamB = parts[1];
+        }
+      }
     }
     
     // Extract sport and league
@@ -110,36 +126,70 @@ const parseOCRText = (text: string): OCRData => {
       result.totalProfitPercentage = profitMatch[1];
     }
     
-    // Parse betting lines - Look for pattern: BettingHouse (BR) BetType Odds ... Value ... Profit
-    const bettingLines = text.match(/([A-Za-z]+)\s*\(BR\)\s+([^\d]+?)\s+(\d+\.\d+).*?(\d+\.\d+).*?USD.*?(\d+\.\d+)/gi);
+    // Parse betting lines - Look for lines containing betting houses and [E]
+    const bettingLines = text.split('\n').filter(line => 
+      /([A-Za-z0-9][A-Za-z0-9 .'-]*)\s*(?:\(\s*BR\s*\)|\bBR\b)?.*?\[\s*E\s*\]/.test(line)
+    );
     
-    if (bettingLines && bettingLines.length >= 2) {
+    if (bettingLines && bettingLines.length >= 1) {
       // Parse first betting line (Bet A)
-      const betAMatch = bettingLines[0].match(/([A-Za-z]+)\s*\(BR\)\s+([^\d]+?)\s+(\d+\.\d+).*?(\d+\.\d+).*?USD.*?(\d+\.\d+)/i);
-      if (betAMatch) {
-        result.betA.bettingHouse = betAMatch[1];
-        result.betA.betType = betAMatch[2].trim();
-        result.betA.odds = betAMatch[3];
-        result.betA.stake = betAMatch[4];
-        result.betA.profit = betAMatch[5];
-        // Calculate payout: stake × odds
-        result.betA.payout = (parseFloat(betAMatch[4]) * parseFloat(betAMatch[3])).toFixed(2);
+      if (bettingLines.length >= 1) {
+        const line = bettingLines[0];
+        
+        // Extract betting house
+        const houseMatch = line.match(/([A-Za-z0-9][A-Za-z0-9 .'-]*)\s*(?:\(\s*BR\s*\)|\bBR\b)?/);
+        if (houseMatch) result.betA.bettingHouse = houseMatch[1].trim();
+        
+        // Extract bet type (everything after house/BR and before last decimal before [E])
+        const betTypeMatch = line.match(/(?:(?:BR\s*\)|\bBR\b)\s+|(?:[A-Za-z0-9 .'-]+)\s+)(.+?)(?=\s+\d+[\.,]\d+(?:[^\d\n]*\[\s*E\s*\]))/);
+        if (betTypeMatch) result.betA.betType = betTypeMatch[1].trim();
+        
+        // Extract odds (last decimal before [E])
+        const oddsMatch = line.match(/(\d+(?:[.,]\d+))(?=[^\d\n]*\[\s*E\s*\])/);
+        if (oddsMatch) result.betA.odds = sanitizeNumber(oddsMatch[1]);
+        
+        // Extract stake (decimal after [E])
+        const stakeMatch = line.match(/\[\s*E\s*\]\s*(\d+(?:[.,]\d+))/);
+        if (stakeMatch) result.betA.stake = sanitizeNumber(stakeMatch[1]);
+        
+        // Calculate payout and profit
+        if (result.betA.odds && result.betA.stake) {
+          const payout = parseFloat(result.betA.stake) * parseFloat(result.betA.odds);
+          result.betA.payout = payout.toFixed(2);
+          result.betA.profit = (payout - parseFloat(result.betA.stake)).toFixed(2);
+        }
       }
       
       // Parse second betting line (Bet B)
-      const betBMatch = bettingLines[1].match(/([A-Za-z]+)\s*\(BR\)\s+([^\d]+?)\s+(\d+\.\d+).*?(\d+\.\d+).*?USD.*?(\d+\.\d+)/i);
-      if (betBMatch) {
-        result.betB.bettingHouse = betBMatch[1];
-        result.betB.betType = betBMatch[2].trim();
-        result.betB.odds = betBMatch[3];
-        result.betB.stake = betBMatch[4];
-        result.betB.profit = betBMatch[5];
-        // Calculate payout: stake × odds
-        result.betB.payout = (parseFloat(betBMatch[4]) * parseFloat(betBMatch[3])).toFixed(2);
+      if (bettingLines.length >= 2) {
+        const line = bettingLines[1];
+        
+        // Extract betting house
+        const houseMatch = line.match(/([A-Za-z0-9][A-Za-z0-9 .'-]*)\s*(?:\(\s*BR\s*\)|\bBR\b)?/);
+        if (houseMatch) result.betB.bettingHouse = houseMatch[1].trim();
+        
+        // Extract bet type (everything after house/BR and before last decimal before [E])
+        const betTypeMatch = line.match(/(?:(?:BR\s*\)|\bBR\b)\s+|(?:[A-Za-z0-9 .'-]+)\s+)(.+?)(?=\s+\d+[\.,]\d+(?:[^\d\n]*\[\s*E\s*\]))/);
+        if (betTypeMatch) result.betB.betType = betTypeMatch[1].trim();
+        
+        // Extract odds (last decimal before [E])
+        const oddsMatch = line.match(/(\d+(?:[.,]\d+))(?=[^\d\n]*\[\s*E\s*\])/);
+        if (oddsMatch) result.betB.odds = sanitizeNumber(oddsMatch[1]);
+        
+        // Extract stake (decimal after [E])
+        const stakeMatch = line.match(/\[\s*E\s*\]\s*(\d+(?:[.,]\d+))/);
+        if (stakeMatch) result.betB.stake = sanitizeNumber(stakeMatch[1]);
+        
+        // Calculate payout and profit
+        if (result.betB.odds && result.betB.stake) {
+          const payout = parseFloat(result.betB.stake) * parseFloat(result.betB.odds);
+          result.betB.payout = payout.toFixed(2);
+          result.betB.profit = (payout - parseFloat(result.betB.stake)).toFixed(2);
+        }
       }
     } else {
-      // Fallback: try to extract betting houses separately
-      const houseMatches = text.match(/(SuperBet|Pinnacle|VBet|VBET|KTO|Bet365|Betano|Aposta1|Betnacional|1xBet)/gi);
+      // Fallback: try to extract betting houses separately (support houses with numbers)
+      const houseMatches = text.match(/(SuperBet|Pinnacle|VBet|VBET|KTO|Bet365|Betano|Aposta1|Betnacional|1xBet|22Bet|Novibet|Sportingbet)/gi);
       if (houseMatches && houseMatches.length >= 2) {
         result.betA.bettingHouse = houseMatches[0];
         result.betB.bettingHouse = houseMatches[1];
@@ -168,23 +218,27 @@ const parseOCRText = (text: string): OCRData => {
         }
       }
       
-      // Extract stakes and profits
-      const valuePattern = /(\d+\.\d+)\s*USD/gi;
-      const valueMatches = text.match(valuePattern);
-      if (valueMatches && valueMatches.length >= 4) {
-        // Extract just the numbers
-        const values = valueMatches.map(v => v.replace(/[^\d\.]/g, ''));
-        result.betA.stake = values[0];
-        result.betA.profit = values[1];
-        result.betB.stake = values[2];
-        result.betB.profit = values[3];
+      // Fallback: Extract stakes from [E] value USD/R$ pattern with normalization
+      const stakePattern = /\[\s*E\s*\]\s*(\d+[\.,]\d+)\s*(?:USD|R\$)?/gi;
+      const stakeMatches = text.match(stakePattern);
+      if (stakeMatches && stakeMatches.length >= 2) {
+        const stakes = stakeMatches.map(v => {
+          const match = v.match(/\d+[\.,]\d+/);
+          return match ? sanitizeNumber(match[0]) : '0';
+        });
+        result.betA.stake = stakes[0];
+        result.betB.stake = stakes[1];
         
-        // Calculate payouts correctly: stake × odds
+        // Calculate payouts correctly: stake × odds (retorno = odd × stake)
         if (result.betA.odds && result.betA.stake) {
-          result.betA.payout = (parseFloat(result.betA.stake) * parseFloat(result.betA.odds)).toFixed(2);
+          const payout = parseFloat(result.betA.stake) * parseFloat(result.betA.odds);
+          result.betA.payout = payout.toFixed(2);
+          result.betA.profit = (payout - parseFloat(result.betA.stake)).toFixed(2);
         }
         if (result.betB.odds && result.betB.stake) {
-          result.betB.payout = (parseFloat(result.betB.stake) * parseFloat(result.betB.odds)).toFixed(2);
+          const payout = parseFloat(result.betB.stake) * parseFloat(result.betB.odds);
+          result.betB.payout = payout.toFixed(2);
+          result.betB.profit = (payout - parseFloat(result.betB.stake)).toFixed(2);
         }
       }
     }

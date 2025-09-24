@@ -14,7 +14,7 @@ import { Bet } from '@shared/schema';
 import { apiRequest } from '@/lib/queryClient';
 
 interface ReportFilters {
-  status: '' | 'pending' | 'won' | 'lost' | 'returned';
+  status: 'all' | 'pending' | 'won' | 'lost' | 'returned';
   dateFrom?: Date;
   dateTo?: Date;
   minStake?: number;
@@ -29,7 +29,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [filters, setFilters] = useState<ReportFilters>({
-    status: '',
+    status: 'all',
   });
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function Reports() {
     let filtered = [...bets];
 
     // Filter by status
-    if (filters.status) {
+    if (filters.status && filters.status !== 'all') {
       filtered = filtered.filter(bet => bet.status === filters.status);
     }
 
@@ -97,7 +97,7 @@ export default function Reports() {
 
   const clearFilters = () => {
     setFilters({
-      status: '',
+      status: 'all',
     });
   };
 
@@ -229,7 +229,7 @@ export default function Reports() {
                   <SelectValue placeholder="Todos os status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="pending">Pendente</SelectItem>
                   <SelectItem value="won">Ganhou</SelectItem>
                   <SelectItem value="lost">Perdeu</SelectItem>
