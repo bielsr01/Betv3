@@ -78,15 +78,18 @@ const parseOCRText = (text: string): OCRData => {
   };
   
   try {
-    // Extract date and time from the header
-    const dateTimeMatch = text.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/i);
+    // Extract date and time from the header (formato: 2025-09-26 12:00)
+    const dateTimeMatch = text.match(/(\d{4})-?(\d{2})-?(\d{2})\s+(\d{1,2}):?(\d{2})/i);
     if (dateTimeMatch) {
-      result.gameDate = new Date(dateTimeMatch[1] + 'T' + dateTimeMatch[2]);
-      result.gameTime = dateTimeMatch[2];
+      const [, year, month, day, hour, minute] = dateTimeMatch;
+      result.gameDate = new Date(`${year}-${month}-${day}T${hour.padStart(2, '0')}:${minute}:00`);
+      result.gameTime = `${hour.padStart(2, '0')}:${minute}`;
     }
     
-    // Extract teams (look for pattern: Team A – Team B or Team A - Team B)
-    const teamsMatch = text.match(/([A-Za-z\s]+)\s*[-–]\s*([A-Za-z\s]+)/i);
+    // Extract teams - improved regex to handle hyphens in team names
+    // Look for pattern: Team A (possibly with hyphens) — Team B (possibly with hyphens)
+    const teamPattern = /([A-Za-z][A-Za-z\s\-]+?)\s*[—–]\s*([A-Za-z][A-Za-z\s\-]+?)(?=\s|\d|%|$)/i;
+    const teamsMatch = text.match(teamPattern);
     if (teamsMatch) {
       result.betA.teamA = teamsMatch[1].trim();
       result.betA.teamB = teamsMatch[2].trim();
@@ -107,48 +110,82 @@ const parseOCRText = (text: string): OCRData => {
       result.totalProfitPercentage = profitMatch[1];
     }
     
-    // Extract betting house, odds, stake, and profit from table rows
-    const bettingHouses: string[] = [];
-    const betTypes: string[] = [];
-    const odds: string[] = [];
-    const stakes: string[] = [];
-    const profits: string[] = [];
+    // Parse betting lines - Look for pattern: BettingHouse (BR) BetType Odds ... Value ... Profit
+    const bettingLines = text.match(/([A-Za-z]+)\s*\(BR\)\s+([^\d]+?)\s+(\d+\.\d+).*?(\d+\.\d+).*?USD.*?(\d+\.\d+)/gi);
     
-    // Look for betting house patterns (common betting sites)
-    const houseMatches = text.match(/(VBet|VBET|KTO|Bet365|Betano|Aposta1|Betnacional|1xBet)/gi);
-    if (houseMatches && houseMatches.length >= 2) {
-      result.betA.bettingHouse = houseMatches[0];
-      result.betB.bettingHouse = houseMatches[1];
-    }
-    
-    // Extract bet types (H1, H2, Over, Under, etc.)
-    const betTypeMatches = text.match(/H1\([^)]+\)|H2\([^)]+\)|Over\s*\d+|Under\s*\d+|Acima\s*\d+|Abaixo\s*\d+/gi);
-    if (betTypeMatches && betTypeMatches.length >= 2) {
-      result.betA.betType = betTypeMatches[0];
-      result.betB.betType = betTypeMatches[1];
-    }
-    
-    // Extract odds (decimal numbers like 2.05, 2.150)
-    const oddsMatches = text.match(/\b\d+\.\d{2,3}\b/g);
-    if (oddsMatches && oddsMatches.length >= 2) {
-      result.betA.odds = oddsMatches[0];
-      result.betB.odds = oddsMatches[1];
-    }
-    
-    // Extract stakes and profits (look for numbers in stake/profit context)
-    const numberMatches = text.match(/\b\d+(?:\.\d+)?\b/g);
-    if (numberMatches && numberMatches.length >= 4) {
-      // Try to identify stakes and profits based on context
-      const values = numberMatches.filter(n => parseFloat(n) > 10 && parseFloat(n) < 10000);
-      if (values.length >= 4) {
+    if (bettingLines && bettingLines.length >= 2) {
+      // Parse first betting line (Bet A)
+      const betAMatch = bettingLines[0].match(/([A-Za-z]+)\s*\(BR\)\s+([^\d]+?)\s+(\d+\.\d+).*?(\d+\.\d+).*?USD.*?(\d+\.\d+)/i);
+      if (betAMatch) {
+        result.betA.bettingHouse = betAMatch[1];
+        result.betA.betType = betAMatch[2].trim();
+        result.betA.odds = betAMatch[3];
+        result.betA.stake = betAMatch[4];
+        result.betA.profit = betAMatch[5];
+        // Calculate payout: stake × odds
+        result.betA.payout = (parseFloat(betAMatch[4]) * parseFloat(betAMatch[3])).toFixed(2);
+      }
+      
+      // Parse second betting line (Bet B)
+      const betBMatch = bettingLines[1].match(/([A-Za-z]+)\s*\(BR\)\s+([^\d]+?)\s+(\d+\.\d+).*?(\d+\.\d+).*?USD.*?(\d+\.\d+)/i);
+      if (betBMatch) {
+        result.betB.bettingHouse = betBMatch[1];
+        result.betB.betType = betBMatch[2].trim();
+        result.betB.odds = betBMatch[3];
+        result.betB.stake = betBMatch[4];
+        result.betB.profit = betBMatch[5];
+        // Calculate payout: stake × odds
+        result.betB.payout = (parseFloat(betBMatch[4]) * parseFloat(betBMatch[3])).toFixed(2);
+      }
+    } else {
+      // Fallback: try to extract betting houses separately
+      const houseMatches = text.match(/(SuperBet|Pinnacle|VBet|VBET|KTO|Bet365|Betano|Aposta1|Betnacional|1xBet)/gi);
+      if (houseMatches && houseMatches.length >= 2) {
+        result.betA.bettingHouse = houseMatches[0];
+        result.betB.bettingHouse = houseMatches[1];
+      }
+      
+      // Extract bet types (look for specific patterns)
+      const betTypePattern = /(Acima|Abaixo|Over|Under|H1|H2)\s*[\d\.]*[^\d]*?(?=\s+\d+\.\d+)/gi;
+      const betTypeMatches = text.match(betTypePattern);
+      if (betTypeMatches && betTypeMatches.length >= 2) {
+        result.betA.betType = betTypeMatches[0].trim();
+        result.betB.betType = betTypeMatches[1].trim();
+      }
+      
+      // Extract odds - look for decimal numbers in betting context
+      const oddsPattern = /\b(\d+\.\d{2,3})\b/g;
+      const oddsMatches = text.match(oddsPattern);
+      if (oddsMatches && oddsMatches.length >= 2) {
+        // Filter out percentages and dates
+        const validOdds = oddsMatches.filter(o => {
+          const num = parseFloat(o);
+          return num >= 1.1 && num <= 50; // reasonable odds range
+        });
+        if (validOdds.length >= 2) {
+          result.betA.odds = validOdds[0];
+          result.betB.odds = validOdds[1];
+        }
+      }
+      
+      // Extract stakes and profits
+      const valuePattern = /(\d+\.\d+)\s*USD/gi;
+      const valueMatches = text.match(valuePattern);
+      if (valueMatches && valueMatches.length >= 4) {
+        // Extract just the numbers
+        const values = valueMatches.map(v => v.replace(/[^\d\.]/g, ''));
         result.betA.stake = values[0];
         result.betA.profit = values[1];
         result.betB.stake = values[2];
         result.betB.profit = values[3];
         
-        // Calculate payouts (stake + profit)
-        result.betA.payout = (parseFloat(values[0]) + parseFloat(values[1])).toString();
-        result.betB.payout = (parseFloat(values[2]) + parseFloat(values[3])).toString();
+        // Calculate payouts correctly: stake × odds
+        if (result.betA.odds && result.betA.stake) {
+          result.betA.payout = (parseFloat(result.betA.stake) * parseFloat(result.betA.odds)).toFixed(2);
+        }
+        if (result.betB.odds && result.betB.stake) {
+          result.betB.payout = (parseFloat(result.betB.stake) * parseFloat(result.betB.odds)).toFixed(2);
+        }
       }
     }
     
