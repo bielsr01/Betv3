@@ -27,14 +27,12 @@ export async function analyzeSureBetImage(imageBase64: string): Promise<SureBetO
   try {
     const prompt = `Analyze this SureBet calculator screenshot and extract the betting information in JSON format.
 
-Extract the following data:
-- Team names (teamA and teamB)
-- Sport and league
-- Both betting lines with: betting house, bet type, odds, stake amount, and profit
-- Game date and time
-- Total profit percentage
+Extract ONLY the essential betting data from this SureBet screenshot:
+- Teams playing
+- Each betting line: house, bet type, odds, stake (USD amount), profit (rightmost number)
+- Sport/league, profit percentage
 
-Return ONLY valid JSON in this exact format:
+Return CONCISE JSON:
 {
   "betA": {
     "bettingHouse": "house name",
@@ -73,16 +71,17 @@ Important:
       {
         inlineData: {
           data: imageBase64,
-          mimeType: "image/png",
+          mimeType: "image/jpeg",
         },
       },
       prompt,
     ];
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
+      model: "gemini-2.5-flash", // Much faster than pro
       config: {
         responseMimeType: "application/json",
+        temperature: 0, // More deterministic/faster
       },
       contents: contents,
     });

@@ -18,14 +18,32 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
   try {
     console.log('Starting Gemini Vision OCR processing...');
     
-    // Convert file to base64
+    // Convert and compress image to reduce processing time
     const base64 = await new Promise<string>((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      const img = new Image();
+      
+      img.onload = () => {
+        // Resize image to max 800px (never upscale) for much faster processing
+        const maxDim = 800;
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const width = img.width * scale;
+        const height = img.height * scale;
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convert to JPEG with 75% quality for much smaller file size
+        const base64Data = canvas.toDataURL('image/jpeg', 0.75).split(',')[1];
+        resolve(base64Data);
+      };
+      
       const reader = new FileReader();
       reader.onload = () => {
-        const result = reader.result as string;
-        // Remove data:image/png;base64, prefix
-        const base64Data = result.split(',')[1];
-        resolve(base64Data);
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     });
