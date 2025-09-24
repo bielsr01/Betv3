@@ -66,6 +66,9 @@ export class MemStorage implements IStorage {
       id, 
       status: insertBet.status || 'pending',
       gameDate: insertBet.gameDate || new Date(),
+      isVerified: insertBet.isVerified || false,
+      totalPairStake: insertBet.totalPairStake || null,
+      profitPercentage: insertBet.profitPercentage || null,
       createdAt: new Date() 
     };
     this.bets.set(id, bet);
