@@ -347,6 +347,23 @@ export async function analyzeImageBlocks(imageBase64: string): Promise<OCRBlocks
   }
 }
 
+export async function analyzeImageWithCoordinateParser(imageBase64: string): Promise<SureBetOCRResult> {
+  try {
+    console.log('Starting coordinate-based OCR processing...');
+    
+    // First get blocks data
+    const blocksResult = await analyzeImageBlocks(imageBase64);
+    
+    // Then parse with coordinate parser
+    const result = await runCoordinateParser(blocksResult);
+    
+    return result;
+  } catch (error) {
+    console.error('Coordinate-based OCR processing failed:', error);
+    throw new Error('Failed to process image with coordinate parser');
+  }
+}
+
 async function runTesseractOCRBlocks(imageBuffer: Buffer): Promise<OCRBlocksResult> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -408,6 +425,72 @@ async function runTesseractOCRBlocks(imageBuffer: Buffer): Promise<OCRBlocksResu
       
     } catch (error) {
       console.error('Error setting up Tesseract OCR blocks process:', error);
+      reject(error);
+    }
+  });
+}
+
+async function runCoordinateParser(blocksData: OCRBlocksResult): Promise<SureBetOCRResult> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Write blocks data to temporary file
+      const tempPath = path.join(tmpdir(), `blocks_data_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.json`);
+      await fs.writeFile(tempPath, JSON.stringify(blocksData, null, 2));
+      
+      const scriptPath = path.join(process.cwd(), 'server', 'coordinate_parser.py');
+      const pythonProcess = spawn('python3', [scriptPath, tempPath]);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+        console.log('Coordinate parser processing info:', data.toString().trim());
+      });
+      
+      pythonProcess.on('close', async (code) => {
+        try {
+          // Clean up temp file
+          await fs.unlink(tempPath).catch(() => {});
+          
+          if (code !== 0) {
+            console.error('Coordinate parser failed:', stderr);
+            reject(new Error(`Coordinate parser process exited with code ${code}`));
+            return;
+          }
+          
+          if (!stdout.trim()) {
+            console.error('No output from coordinate parser script');
+            reject(new Error('No data extracted from coordinate parser'));
+            return;
+          }
+          
+          try {
+            const parsedData = JSON.parse(stdout);
+            console.log('Coordinate parser extraction completed successfully');
+            resolve(parsedData);
+          } catch (parseError) {
+            console.error('Error parsing coordinate parser output:', parseError);
+            console.log('Raw stdout:', stdout);
+            reject(new Error('Failed to parse coordinate parser result'));
+          }
+        } catch (error) {
+          console.error('Error in coordinate parser cleanup:', error);
+          reject(error);
+        }
+      });
+      
+      pythonProcess.on('error', (error) => {
+        console.error('Failed to start coordinate parser process:', error);
+        reject(new Error('Failed to start coordinate parser process'));
+      });
+      
+    } catch (error) {
+      console.error('Error setting up coordinate parser process:', error);
       reject(error);
     }
   });

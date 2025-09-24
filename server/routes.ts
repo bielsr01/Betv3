@@ -80,7 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Analysis endpoint using Tesseract OCR
+  // OCR Analysis endpoint using Coordinate Parser (PRIMARY METHOD)
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -96,20 +96,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const startTime = Date.now();
       
-      // Import and use Tesseract OCR function
-      const { analyzeSureBetImageLocal } = await import('./local-ocr');
-      const result = await analyzeSureBetImageLocal(imageBase64);
-      
-      const processingTime = Date.now() - startTime;
-      console.log(`Tesseract OCR processing completed in ${processingTime}ms`);
-      
-      res.json({
-        ...result,
-        processingTime: `${processingTime}ms`
-      });
+      try {
+        // PRIMARY: Use coordinate-based parser for accurate field mapping
+        const { analyzeImageWithCoordinateParser } = await import('./local-ocr');
+        const result = await analyzeImageWithCoordinateParser(imageBase64);
+        
+        const processingTime = Date.now() - startTime;
+        console.log(`Coordinate parser processing completed in ${processingTime}ms`);
+        
+        res.json({
+          ...result,
+          processingTime: `${processingTime}ms`
+        });
+      } catch (coordinateError) {
+        console.error('Coordinate parser failed, falling back to legacy parser:', coordinateError);
+        
+        // FALLBACK: Use legacy OCR parser if coordinate parser fails
+        const { analyzeSureBetImageLocal } = await import('./local-ocr');
+        const fallbackResult = await analyzeSureBetImageLocal(imageBase64);
+        
+        const processingTime = Date.now() - startTime;
+        console.log(`Fallback OCR processing completed in ${processingTime}ms`);
+        
+        res.json({
+          ...fallbackResult,
+          processingTime: `${processingTime}ms`,
+          note: 'Used fallback parser due to coordinate parser failure'
+        });
+      }
     } catch (error) {
-      console.error('Tesseract OCR analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image with Tesseract OCR' });
+      console.error('OCR analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image with OCR' });
     }
   });
 
@@ -143,6 +160,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Tesseract OCR blocks analysis error:', error);
       res.status(500).json({ error: 'Failed to analyze image blocks with Tesseract OCR' });
+    }
+  });
+
+  // OCR Analysis with Coordinate Parser - uses coordinate-based mapping for accurate field extraction
+  app.post('/api/ocr/coordinate', async (req, res) => {
+    try {
+      const { imageBase64 } = req.body;
+      
+      if (!imageBase64) {
+        return res.status(400).json({ error: 'Image data is required' });
+      }
+      
+      // Validate image size (prevent oversized uploads)
+      if (imageBase64.length > 4 * 1024 * 1024) { // ~3MB base64 limit
+        return res.status(413).json({ error: 'Image too large. Please use a smaller image.' });
+      }
+
+      const startTime = Date.now();
+      
+      // Import and use coordinate parser function
+      const { analyzeImageWithCoordinateParser } = await import('./local-ocr');
+      const result = await analyzeImageWithCoordinateParser(imageBase64);
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`Coordinate parser processing completed in ${processingTime}ms`);
+      
+      res.json({
+        ...result,
+        processingTime: `${processingTime}ms`
+      });
+    } catch (error) {
+      console.error('Coordinate parser analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image with coordinate parser' });
     }
   });
 
