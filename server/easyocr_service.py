@@ -44,6 +44,17 @@ def main():
         try:
             import pytesseract
             from PIL import Image, ImageEnhance, ImageFilter
+            
+            # Configure tesseract path for Replit environment
+            import subprocess
+            result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+            if result.returncode == 0:
+                tesseract_path = result.stdout.strip()
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+                print(f"Tesseract found at: {tesseract_path}", file=sys.stderr)
+            else:
+                print("Tesseract binary not found in PATH", file=sys.stderr)
+                
         except ImportError as e:
             print(json.dumps({"error": f"Tesseract import failed: {str(e)}"}))
             sys.exit(1)
@@ -82,13 +93,13 @@ def main():
         extraction_start = time.time()
         
         # Configure Tesseract for better SureBet detection
-        # PSM 6 = Assume a single uniform block of text
-        # Characters allowed for betting data
-        tesseract_config = '--psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:%()[]{}/-+$€£¥R$USD vs–—'
+        # PSM 6 = Assume a single uniform block of text, preserve interword spaces
+        # Extended character set for Portuguese/English betting data including accented characters AND SPACES
+        tesseract_config = '--psm 6 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ0123456789.,:%()[]{}/-+$€£¥R$USD vs–— -c preserve_interword_spaces=1'
         
         # Extract text with detailed information
         try:
-            # Get detailed OCR data
+            # Get detailed OCR data - use Portuguese + English for best results
             data_dict = pytesseract.image_to_data(pil_image, config=tesseract_config, output_type=pytesseract.Output.DICT, lang='por+eng')
             
             # Get full text
@@ -96,7 +107,7 @@ def main():
             
         except Exception as e:
             print(f"Tesseract processing error: {e}", file=sys.stderr)
-            # Fallback to basic extraction
+            # Fallback to basic extraction with Portuguese + English
             full_text = pytesseract.image_to_string(pil_image, lang='por+eng')
             data_dict = None
         
