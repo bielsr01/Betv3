@@ -46,6 +46,9 @@ export default function OCRVerification({
     if (!formData.betA.payout || isNaN(Number(formData.betA.payout)) || Number(formData.betA.payout) <= 0) {
       newErrors['betA.payout'] = 'Retorno deve ser um número válido maior que 0';
     }
+    if (!formData.betA.profit || isNaN(Number(formData.betA.profit))) {
+      newErrors['betA.profit'] = 'Lucro deve ser um número válido';
+    }
 
     // Validate Bet B
     if (!formData.betB.bettingHouse.trim()) newErrors['betB.bettingHouse'] = 'Casa de aposta é obrigatória';
@@ -61,9 +64,17 @@ export default function OCRVerification({
     if (!formData.betB.payout || isNaN(Number(formData.betB.payout)) || Number(formData.betB.payout) <= 0) {
       newErrors['betB.payout'] = 'Retorno deve ser um número válido maior que 0';
     }
+    if (!formData.betB.profit || isNaN(Number(formData.betB.profit))) {
+      newErrors['betB.profit'] = 'Lucro deve ser um número válido';
+    }
 
     // Validate Game Info
     if (!formData.gameDate) newErrors.gameDate = 'Data do jogo é obrigatória';
+    if (!formData.sport || !formData.sport.trim()) newErrors.sport = 'Esporte é obrigatório';
+    if (!formData.league || !formData.league.trim()) newErrors.league = 'Liga é obrigatória';
+    if (!formData.totalProfitPercentage || isNaN(Number(formData.totalProfitPercentage))) {
+      newErrors.totalProfitPercentage = 'Porcentagem de lucro total deve ser um número válido';
+    }
 
     // Cross validation - normalize team names for comparison
     const normalizeTeam = (team: string) => team.trim().toLowerCase();
@@ -97,7 +108,7 @@ export default function OCRVerification({
     }
   };
 
-  const updateGameField = (field: 'gameDate' | 'gameTime', value: Date | string) => {
+  const updateGameField = (field: 'gameDate' | 'gameTime' | 'sport' | 'league' | 'totalProfitPercentage', value: Date | string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
@@ -196,7 +207,7 @@ export default function OCRVerification({
           </div>
 
           {/* Financial Data */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div className="space-y-2">
               <Label htmlFor={`${bet}-odds`}>Odd</Label>
               <Input
@@ -245,6 +256,23 @@ export default function OCRVerification({
               />
               {errors[`${bet}.payout`] && (
                 <p className="text-sm text-destructive">{errors[`${bet}.payout`]}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor={`${bet}-profit`}>Lucro (R$)</Label>
+              <Input
+                id={`${bet}-profit`}
+                type="number"
+                step="0.01"
+                value={betData.profit}
+                onChange={(e) => updateBetField(bet, 'profit', e.target.value)}
+                placeholder="2.50"
+                className={errors[`${bet}.profit`] ? 'border-destructive' : ''}
+                data-testid={`input-${bet}-profit`}
+              />
+              {errors[`${bet}.profit`] && (
+                <p className="text-sm text-destructive">{errors[`${bet}.profit`]}</p>
               )}
             </div>
           </div>
@@ -331,6 +359,49 @@ export default function OCRVerification({
                     onChange={(e) => updateGameField('gameTime', e.target.value)}
                     data-testid="input-game-time"
                   />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="sport">Esporte</Label>
+                  <Input
+                    id="sport"
+                    value={formData.sport || ''}
+                    onChange={(e) => updateGameField('sport', e.target.value)}
+                    placeholder="Ex: Futebol"
+                    className={errors.sport ? 'border-destructive' : ''}
+                    data-testid="input-sport"
+                  />
+                  {errors.sport && <p className="text-sm text-destructive">{errors.sport}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="league">Liga</Label>
+                  <Input
+                    id="league"
+                    value={formData.league || ''}
+                    onChange={(e) => updateGameField('league', e.target.value)}
+                    placeholder="Ex: Itália - Série C"
+                    className={errors.league ? 'border-destructive' : ''}
+                    data-testid="input-league"
+                  />
+                  {errors.league && <p className="text-sm text-destructive">{errors.league}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="total-profit">Lucro Total (%)</Label>
+                  <Input
+                    id="total-profit"
+                    type="number"
+                    step="0.01"
+                    value={formData.totalProfitPercentage || ''}
+                    onChange={(e) => updateGameField('totalProfitPercentage', e.target.value)}
+                    placeholder="2.52"
+                    className={errors.totalProfitPercentage ? 'border-destructive' : ''}
+                    data-testid="input-total-profit"
+                  />
+                  {errors.totalProfitPercentage && <p className="text-sm text-destructive">{errors.totalProfitPercentage}</p>}
                 </div>
               </div>
             </CardContent>
