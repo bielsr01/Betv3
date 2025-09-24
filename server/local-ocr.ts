@@ -57,7 +57,7 @@ export async function analyzeSureBetImageLocal(imageBase64: string): Promise<Sur
 
 async function runEasyOCR(imageBase64: string): Promise<SureBetOCRResult> {
   return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, 'easyocr-service.py');
+    const scriptPath = path.join(process.cwd(), 'server', 'easyocr-service.py');
     const pythonProcess = spawn('python3', [scriptPath, imageBase64]);
     
     let stdout = '';
