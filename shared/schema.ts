@@ -54,6 +54,7 @@ export const singleBetOCRSchema = z.object({
   odds: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Odd deve ser um número válido"),
   stake: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Valor da aposta deve ser um número válido"),
   payout: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Retorno deve ser um número válido"),
+  profit: z.string().refine((val) => !isNaN(Number(val)), "Lucro deve ser um número válido"),
 });
 
 // OCR extracted data for paired bets (two opposing bets)
@@ -62,6 +63,9 @@ export const ocrDataSchema = z.object({
   betB: singleBetOCRSchema,
   gameDate: z.date(),
   gameTime: z.string().optional(),
+  sport: z.string().min(1, "Esporte é obrigatório"),
+  league: z.string().min(1, "Liga é obrigatória"),
+  totalProfitPercentage: z.string().refine((val) => !isNaN(Number(val)), "Porcentagem de lucro total deve ser um número válido"),
 }).refine(
   (data) => {
     // Ensure teams are consistent across both bets (normalized comparison)
