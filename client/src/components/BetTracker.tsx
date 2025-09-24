@@ -6,44 +6,156 @@ import ImageUpload from './ImageUpload';
 import OCRVerification from './OCRVerification';
 import Dashboard from './Dashboard';
 import { ThemeToggle } from './ThemeToggle';
+import Tesseract from 'tesseract.js';
 
 type AppState = 'upload' | 'verification' | 'dashboard';
 
-// Mock OCR function that extracts data from SureBet calculator images
-const mockOCRProcess = (file: File): Promise<OCRData> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        betA: {
-          bettingHouse: 'Aposta1',
-          teamA: 'SS Monopoli 1966',
-          teamB: 'Cavese 1919',
-          betType: 'Acima 2',
-          selectedSide: 'A',
-          odds: '2.200',
-          stake: '46.60',
-          payout: '102.52',
-          profit: '2.52'
-        },
-        betB: {
-          bettingHouse: 'Betnacional',
-          teamA: 'SS Monopoli 1966',
-          teamB: 'Cavese 1919',
-          betType: 'Abaixo 2',
-          selectedSide: 'B',
-          odds: '1.920',
-          stake: '53.40',
-          payout: '102.53',
-          profit: '2.53'
-        },
-        gameDate: new Date('2025-09-28T15:30:00'),
-        gameTime: '15:30',
-        sport: 'Futebol',
-        league: 'Itália - Série C',
-        totalProfitPercentage: '2.52'
-      });
-    }, 2000);
-  });
+// OCR function to extract data from SureBet calculator images using Tesseract.js
+const processOCRFromImage = async (file: File): Promise<OCRData> => {
+  try {
+    console.log('Starting OCR processing...');
+    
+    // Convert file to image URL for processing
+    const imageUrl = URL.createObjectURL(file);
+    
+    // Run OCR on the image
+    const { data: { text } } = await Tesseract.recognize(imageUrl, 'por+eng', {
+      logger: m => console.log(m)
+    });
+    
+    console.log('OCR Text extracted:', text);
+    
+    // Clean the URL object
+    URL.revokeObjectURL(imageUrl);
+    
+    // Parse the extracted text to get betting data
+    return parseOCRText(text);
+    
+  } catch (error) {
+    console.error('OCR processing failed:', error);
+    throw new Error('Falha ao processar OCR da imagem');
+  }
+};
+
+// Function to parse OCR text and extract betting information
+const parseOCRText = (text: string): OCRData => {
+  console.log('Parsing OCR text:', text);
+  
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  
+  // Initialize default data structure
+  const result: OCRData = {
+    betA: {
+      bettingHouse: '',
+      teamA: '',
+      teamB: '',
+      betType: '',
+      selectedSide: 'A',
+      odds: '0',
+      stake: '0',
+      payout: '0',
+      profit: '0'
+    },
+    betB: {
+      bettingHouse: '',
+      teamA: '',
+      teamB: '',
+      betType: '',
+      selectedSide: 'B',
+      odds: '0',
+      stake: '0',
+      payout: '0',
+      profit: '0'
+    },
+    gameDate: new Date(),
+    gameTime: '',
+    sport: '',
+    league: '',
+    totalProfitPercentage: '0'
+  };
+  
+  try {
+    // Extract date and time from the header
+    const dateTimeMatch = text.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/i);
+    if (dateTimeMatch) {
+      result.gameDate = new Date(dateTimeMatch[1] + 'T' + dateTimeMatch[2]);
+      result.gameTime = dateTimeMatch[2];
+    }
+    
+    // Extract teams (look for pattern: Team A – Team B or Team A - Team B)
+    const teamsMatch = text.match(/([A-Za-z\s]+)\s*[-–]\s*([A-Za-z\s]+)/i);
+    if (teamsMatch) {
+      result.betA.teamA = teamsMatch[1].trim();
+      result.betA.teamB = teamsMatch[2].trim();
+      result.betB.teamA = teamsMatch[1].trim();
+      result.betB.teamB = teamsMatch[2].trim();
+    }
+    
+    // Extract sport and league
+    const sportLeagueMatch = text.match(/(Futebol|Football)\s*\/\s*([^\n]+)/i);
+    if (sportLeagueMatch) {
+      result.sport = sportLeagueMatch[1];
+      result.league = sportLeagueMatch[2].trim();
+    }
+    
+    // Extract total profit percentage
+    const profitMatch = text.match(/(\d+\.\d+)%/i);
+    if (profitMatch) {
+      result.totalProfitPercentage = profitMatch[1];
+    }
+    
+    // Extract betting house, odds, stake, and profit from table rows
+    const bettingHouses: string[] = [];
+    const betTypes: string[] = [];
+    const odds: string[] = [];
+    const stakes: string[] = [];
+    const profits: string[] = [];
+    
+    // Look for betting house patterns (common betting sites)
+    const houseMatches = text.match(/(VBet|VBET|KTO|Bet365|Betano|Aposta1|Betnacional|1xBet)/gi);
+    if (houseMatches && houseMatches.length >= 2) {
+      result.betA.bettingHouse = houseMatches[0];
+      result.betB.bettingHouse = houseMatches[1];
+    }
+    
+    // Extract bet types (H1, H2, Over, Under, etc.)
+    const betTypeMatches = text.match(/H1\([^)]+\)|H2\([^)]+\)|Over\s*\d+|Under\s*\d+|Acima\s*\d+|Abaixo\s*\d+/gi);
+    if (betTypeMatches && betTypeMatches.length >= 2) {
+      result.betA.betType = betTypeMatches[0];
+      result.betB.betType = betTypeMatches[1];
+    }
+    
+    // Extract odds (decimal numbers like 2.05, 2.150)
+    const oddsMatches = text.match(/\b\d+\.\d{2,3}\b/g);
+    if (oddsMatches && oddsMatches.length >= 2) {
+      result.betA.odds = oddsMatches[0];
+      result.betB.odds = oddsMatches[1];
+    }
+    
+    // Extract stakes and profits (look for numbers in stake/profit context)
+    const numberMatches = text.match(/\b\d+(?:\.\d+)?\b/g);
+    if (numberMatches && numberMatches.length >= 4) {
+      // Try to identify stakes and profits based on context
+      const values = numberMatches.filter(n => parseFloat(n) > 10 && parseFloat(n) < 10000);
+      if (values.length >= 4) {
+        result.betA.stake = values[0];
+        result.betA.profit = values[1];
+        result.betB.stake = values[2];
+        result.betB.profit = values[3];
+        
+        // Calculate payouts (stake + profit)
+        result.betA.payout = (parseFloat(values[0]) + parseFloat(values[1])).toString();
+        result.betB.payout = (parseFloat(values[2]) + parseFloat(values[3])).toString();
+      }
+    }
+    
+    console.log('Parsed OCR result:', result);
+    return result;
+    
+  } catch (error) {
+    console.error('Error parsing OCR text:', error);
+    throw new Error('Erro ao analisar texto da imagem');
+  }
 };
 
 export default function BetTracker() {
@@ -83,8 +195,8 @@ export default function BetTracker() {
     setCurrentImageUrl(imageUrl);
     
     try {
-      // Mock OCR processing //todo: replace with actual OCR
-      const ocrData = await mockOCRProcess(file);
+      // Real OCR processing using Tesseract.js
+      const ocrData = await processOCRFromImage(file);
       setCurrentOCRData(ocrData);
       setCurrentState('verification');
     } catch (error) {
