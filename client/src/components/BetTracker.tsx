@@ -113,8 +113,8 @@ const parseOCRText = (text: string): OCRData => {
       }
     }
     
-    // Extract sport and league
-    const sportLeagueMatch = text.match(/(Futebol|Football)\s*\/\s*([^\n]+)/i);
+    // Extract sport and league (expanded for SureBet)
+    const sportLeagueMatch = text.match(/(Futebol|Football|Basquete|Basketball|Futebol americano|Tennis|Volei)\s*\/\s*([^\n]+)/i);
     if (sportLeagueMatch) {
       result.sport = sportLeagueMatch[1];
       result.league = sportLeagueMatch[2].trim();
@@ -126,31 +126,45 @@ const parseOCRText = (text: string): OCRData => {
       result.totalProfitPercentage = profitMatch[1];
     }
     
-    // Parse betting lines - Look for lines containing betting houses and [E]
-    const bettingLines = text.split('\n').filter(line => 
-      /([A-Za-z0-9][A-Za-z0-9 .'-]*)\s*(?:\(\s*BR\s*\)|\bBR\b)?.*?\[\s*E\s*\]/.test(line)
-    );
+    // Ensure teams are extracted correctly if missed in first attempt
+    if (!result.betA.teamA || !result.betA.teamB) {
+      // Look for team pattern in early lines (before percentage)
+      const earlyLines = lines.slice(0, 3);
+      for (const line of earlyLines) {
+        const teamMatch = line.match(/([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)\s*–\s*([A-Za-zÀ-ÿ0-9]+(?:[ .'-][A-Za-zÀ-ÿ0-9]+)*)/i);
+        if (teamMatch) {
+          result.betA.teamA = teamMatch[1].trim();
+          result.betA.teamB = teamMatch[2].trim();
+          result.betB.teamA = teamMatch[1].trim();
+          result.betB.teamB = teamMatch[2].trim();
+          break;
+        }
+      }
+    }
+    
+    // Parse betting lines - Look for SureBet format with [E pattern
+    const bettingLines = text.split('\n').filter(line => {
+      // Look for lines with: BettingHouse + bet info + [E + stake + USD
+      return /(?:Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet).*?\[E.*?USD/i.test(line);
+    });
     
     if (bettingLines && bettingLines.length >= 1) {
-      // Parse first betting line (Bet A)
+      // Parse first betting line (Bet A) - SureBet format
       if (bettingLines.length >= 1) {
         const line = bettingLines[0];
         
-        // Extract betting house
-        const houseMatch = line.match(/([A-Za-z0-9][A-Za-z0-9 .'-]*)\s*(?:\(\s*BR\s*\)|\bBR\b)?/);
+        // Extract betting house (first column)
+        const houseMatch = line.match(/(Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet)/i);
         if (houseMatch) result.betA.bettingHouse = houseMatch[1].trim();
         
-        // Extract bet type (everything after house/BR and before last decimal before [E])
-        const betTypeMatch = line.match(/(?:(?:BR\s*\)|\bBR\b)\s+|(?:[A-Za-z0-9 .'-]+)\s+)(.+?)(?=\s+\d+[\.,]\d+(?:[^\d\n]*\[\s*E\s*\]))/);
-        if (betTypeMatch) result.betA.betType = betTypeMatch[1].trim();
-        
-        // Extract odds (last decimal before [E])
-        const oddsMatch = line.match(/(\d+(?:[.,]\d+))(?=[^\d\n]*\[\s*E\s*\])/);
-        if (oddsMatch) result.betA.odds = sanitizeNumber(oddsMatch[1]);
-        
-        // Extract stake (decimal after [E])
-        const stakeMatch = line.match(/\[\s*E\s*\]\s*(\d+(?:[.,]\d+))/);
-        if (stakeMatch) result.betA.stake = sanitizeNumber(stakeMatch[1]);
+        // Parse SureBet format: Pinnacle (Br) H2(+2.5) Tempo Extra 2.250 o [E 46.68 USD v [>] 5.03
+        const betTypeMatch = line.match(/(?:Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet)\s*(?:\([^)]+\))?\s+([^\d]+?)\s+(\d+\.\d+)\s+.*?\[E\s+(\d+\.\d+)\s+USD.*?(\d+\.\d+)/i);
+        if (betTypeMatch) {
+          result.betA.betType = betTypeMatch[1].trim();
+          result.betA.odds = sanitizeNumber(betTypeMatch[2]);
+          result.betA.stake = sanitizeNumber(betTypeMatch[3]);
+          result.betA.profit = sanitizeNumber(betTypeMatch[4]);
+        }
         
         // Calculate payout and profit
         if (result.betA.odds && result.betA.stake) {
@@ -160,25 +174,22 @@ const parseOCRText = (text: string): OCRData => {
         }
       }
       
-      // Parse second betting line (Bet B)
+      // Parse second betting line (Bet B) - SureBet format
       if (bettingLines.length >= 2) {
         const line = bettingLines[1];
         
-        // Extract betting house
-        const houseMatch = line.match(/([A-Za-z0-9][A-Za-z0-9 .'-]*)\s*(?:\(\s*BR\s*\)|\bBR\b)?/);
+        // Extract betting house (first column)
+        const houseMatch = line.match(/(Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet)/i);
         if (houseMatch) result.betB.bettingHouse = houseMatch[1].trim();
         
-        // Extract bet type (everything after house/BR and before last decimal before [E])
-        const betTypeMatch = line.match(/(?:(?:BR\s*\)|\bBR\b)\s+|(?:[A-Za-z0-9 .'-]+)\s+)(.+?)(?=\s+\d+[\.,]\d+(?:[^\d\n]*\[\s*E\s*\]))/);
-        if (betTypeMatch) result.betB.betType = betTypeMatch[1].trim();
-        
-        // Extract odds (last decimal before [E])
-        const oddsMatch = line.match(/(\d+(?:[.,]\d+))(?=[^\d\n]*\[\s*E\s*\])/);
-        if (oddsMatch) result.betB.odds = sanitizeNumber(oddsMatch[1]);
-        
-        // Extract stake (decimal after [E])
-        const stakeMatch = line.match(/\[\s*E\s*\]\s*(\d+(?:[.,]\d+))/);
-        if (stakeMatch) result.betB.stake = sanitizeNumber(stakeMatch[1]);
+        // Parse SureBet format: Betfast H1(-2.5) Tempo Extra 1.970 e [E 53.32 USD v Q 5.04
+        const betTypeMatch = line.match(/(?:Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet)\s*(?:\([^)]+\))?\s+([^\d]+?)\s+(\d+\.\d+)\s+.*?\[E\s+(\d+\.\d+)\s+USD.*?(\d+\.\d+)/i);
+        if (betTypeMatch) {
+          result.betB.betType = betTypeMatch[1].trim();
+          result.betB.odds = sanitizeNumber(betTypeMatch[2]);
+          result.betB.stake = sanitizeNumber(betTypeMatch[3]);
+          result.betB.profit = sanitizeNumber(betTypeMatch[4]);
+        }
         
         // Calculate payout and profit
         if (result.betB.odds && result.betB.stake) {
@@ -188,58 +199,70 @@ const parseOCRText = (text: string): OCRData => {
         }
       }
     } else {
-      // Fallback: try to extract betting houses separately (support houses with numbers)
-      const houseMatches = text.match(/(SuperBet|Pinnacle|VBet|VBET|KTO|Bet365|Betano|Aposta1|Betnacional|1xBet|22Bet|Novibet|Sportingbet)/gi);
-      if (houseMatches && houseMatches.length >= 2) {
+      // Enhanced fallback for SureBet format when structured parsing fails
+      
+      // Try to extract betting houses from text
+      const houseMatches = text.match(/(Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet)/gi);
+      if (houseMatches && houseMatches.length >= 1) {
         result.betA.bettingHouse = houseMatches[0];
-        result.betB.bettingHouse = houseMatches[1];
+        if (houseMatches.length >= 2) {
+          result.betB.bettingHouse = houseMatches[1];
+        }
       }
       
-      // Extract bet types (look for specific patterns)
-      const betTypePattern = /(Acima|Abaixo|Over|Under|H1|H2)\s*[\d\.]*[^\d]*?(?=\s+\d+\.\d+)/gi;
+      // Extract bet types (SureBet patterns)
+      const betTypePattern = /(H[12]\([^)]+\)|Acima|Abaixo|Over|Under|Gols:\s*Sim|2\s*-\s*escanteios)/gi;
       const betTypeMatches = text.match(betTypePattern);
-      if (betTypeMatches && betTypeMatches.length >= 2) {
+      if (betTypeMatches && betTypeMatches.length >= 1) {
         result.betA.betType = betTypeMatches[0].trim();
-        result.betB.betType = betTypeMatches[1].trim();
-      }
-      
-      // Extract odds - look for decimal numbers in betting context
-      const oddsPattern = /\b(\d+\.\d{2,3})\b/g;
-      const oddsMatches = text.match(oddsPattern);
-      if (oddsMatches && oddsMatches.length >= 2) {
-        // Filter out percentages and dates
-        const validOdds = oddsMatches.filter(o => {
-          const num = parseFloat(o);
-          return num >= 1.1 && num <= 50; // reasonable odds range
-        });
-        if (validOdds.length >= 2) {
-          result.betA.odds = validOdds[0];
-          result.betB.odds = validOdds[1];
+        if (betTypeMatches.length >= 2) {
+          result.betB.betType = betTypeMatches[1].trim();
         }
       }
       
-      // Fallback: Extract stakes from [E] value USD/R$ pattern with normalization
-      const stakePattern = /\[\s*E\s*\]\s*(\d+[\.,]\d+)\s*(?:USD|R\$)?/gi;
-      const stakeMatches = text.match(stakePattern);
-      if (stakeMatches && stakeMatches.length >= 2) {
-        const stakes = stakeMatches.map(v => {
-          const match = v.match(/\d+[\.,]\d+/);
-          return match ? sanitizeNumber(match[0]) : '0';
-        });
-        result.betA.stake = stakes[0];
-        result.betB.stake = stakes[1];
+      // Extract from [E pattern lines (SureBet format)
+      const eLines = lines.filter(line => /\[E\s+\d+\.\d+\s+USD/.test(line));
+      if (eLines.length >= 1) {
+        // Parse first [E line - extract house + bet type + odds + stake + profit
+        const firstMatch = eLines[0].match(/(Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet)\s*(?:\([^)]+\))?\s+([^\d]+?)\s+(\d+\.\d+)\s+.*?\[E\s+(\d+\.\d+)\s+USD.*?(\d+\.\d+)/i);
+        if (firstMatch) {
+          result.betA.bettingHouse = firstMatch[1].trim();
+          result.betA.betType = firstMatch[2].trim();
+          result.betA.odds = sanitizeNumber(firstMatch[3]);
+          result.betA.stake = sanitizeNumber(firstMatch[4]);
+          result.betA.profit = sanitizeNumber(firstMatch[5]);
+        }
         
-        // Calculate payouts correctly: stake × odds (retorno = odd × stake)
-        if (result.betA.odds && result.betA.stake) {
-          const payout = parseFloat(result.betA.stake) * parseFloat(result.betA.odds);
-          result.betA.payout = payout.toFixed(2);
-          result.betA.profit = (payout - parseFloat(result.betA.stake)).toFixed(2);
+        if (eLines.length >= 2) {
+          // Parse second [E line
+          const secondMatch = eLines[1].match(/(Pinnacle|BravoBet|Betfast|Blaze|KTO|Betano|1xBet|22Bet|VBet|Bet365|Betnacional|Novibet|Sportingbet)\s*(?:\([^)]+\))?\s+([^\d]+?)\s+(\d+\.\d+)\s+.*?\[E\s+(\d+\.\d+)\s+USD.*?(\d+\.\d+)/i);
+          if (secondMatch) {
+            result.betB.bettingHouse = secondMatch[1].trim();
+            result.betB.betType = secondMatch[2].trim();
+            result.betB.odds = sanitizeNumber(secondMatch[3]);
+            result.betB.stake = sanitizeNumber(secondMatch[4]);
+            result.betB.profit = sanitizeNumber(secondMatch[5]);
+          }
         }
-        if (result.betB.odds && result.betB.stake) {
-          const payout = parseFloat(result.betB.stake) * parseFloat(result.betB.odds);
-          result.betB.payout = payout.toFixed(2);
-          result.betB.profit = (payout - parseFloat(result.betB.stake)).toFixed(2);
-        }
+      }
+    }
+    
+    // Calculate payouts for both bets: payout = stake × odds
+    if (result.betA.odds && result.betA.stake) {
+      const payout = parseFloat(result.betA.stake) * parseFloat(result.betA.odds);
+      result.betA.payout = payout.toFixed(2);
+      // If profit wasn't extracted, calculate it
+      if (!result.betA.profit || result.betA.profit === '0') {
+        result.betA.profit = (payout - parseFloat(result.betA.stake)).toFixed(2);
+      }
+    }
+    
+    if (result.betB.odds && result.betB.stake) {
+      const payout = parseFloat(result.betB.stake) * parseFloat(result.betB.odds);
+      result.betB.payout = payout.toFixed(2);
+      // If profit wasn't extracted, calculate it
+      if (!result.betB.profit || result.betB.profit === '0') {
+        result.betB.profit = (payout - parseFloat(result.betB.stake)).toFixed(2);
       }
     }
     
