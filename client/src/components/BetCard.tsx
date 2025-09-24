@@ -1,18 +1,19 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, TrendingUp, TrendingDown, Clock, CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
+import { Calendar, TrendingUp, TrendingDown, Clock, CheckCircle2, XCircle, RotateCcw, Link2, Target, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Bet } from '@shared/schema';
 
 interface BetCardProps {
   bet: Bet;
+  pairedBet?: Bet; // The opposing bet in the pair
   onResolve: (betId: string, status: 'won' | 'lost' | 'returned') => void;
   showResolveActions?: boolean;
 }
 
-export default function BetCard({ bet, onResolve, showResolveActions = true }: BetCardProps) {
+export default function BetCard({ bet, pairedBet, onResolve, showResolveActions = true }: BetCardProps) {
   const statusConfig = {
     pending: {
       icon: Clock,
@@ -43,7 +44,7 @@ export default function BetCard({ bet, onResolve, showResolveActions = true }: B
   const config = statusConfig[bet.status];
   const StatusIcon = config.icon;
   
-  const formatCurrency = (value: string) => {
+  const formatCurrency = (value: string | number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
@@ -54,18 +55,49 @@ export default function BetCard({ bet, onResolve, showResolveActions = true }: B
     return format(new Date(date), 'dd/MM/yyyy às HH:mm', { locale: ptBR });
   };
 
-  const calculateProfit = () => {
+  const calculateNetProfit = () => {
     const stake = Number(bet.stake);
-    const potential = Number(bet.potentialProfit);
-    return potential - stake;
+    const payout = Number(bet.payout);
+    return payout - stake;
   };
+
+  const getSelectedTeam = () => {
+    return bet.selectedSide === 'A' ? bet.teamA : bet.teamB;
+  };
+
+  const getBetPositionInfo = () => {
+    const isA = bet.betPosition === 'A';
+    return {
+      label: `Aposta ${bet.betPosition}`,
+      color: isA ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-700' : 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900 dark:text-green-200 dark:border-green-700'
+    };
+  };
+
+  const getPairProfitInfo = () => {
+    if (!bet.totalPairStake || !bet.profitPercentage) return null;
+    
+    const totalStake = Number(bet.totalPairStake);
+    const profitPercentage = Number(bet.profitPercentage);
+    const payout = Number(bet.payout);
+    const netProfit = payout - totalStake;
+    
+    return {
+      totalStake,
+      profitPercentage,
+      netProfit,
+      isPositive: netProfit > 0
+    };
+  };
+
+  const positionInfo = getBetPositionInfo();
+  const pairInfo = getPairProfitInfo();
 
   return (
     <Card className="hover-elevate transition-all duration-200">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="outline" className="font-medium">
                 {bet.bettingHouse}
               </Badge>
@@ -73,11 +105,34 @@ export default function BetCard({ bet, onResolve, showResolveActions = true }: B
                 <StatusIcon className="w-3 h-3 mr-1" />
                 {config.label}
               </Badge>
+              <Badge variant="outline" className={positionInfo.color}>
+                <Target className="w-3 h-3 mr-1" />
+                {positionInfo.label}
+              </Badge>
+              {pairedBet && (
+                <Badge variant="outline" className="text-muted-foreground">
+                  <Link2 className="w-3 h-3 mr-1" />
+                  Par
+                </Badge>
+              )}
             </div>
-            <h3 className="font-semibold text-lg leading-tight" data-testid={`text-bet-type-${bet.id}`}>
+            
+            {/* Teams Display */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <span className="font-medium">{bet.teamA} vs {bet.teamB}</span>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Apostou em: <span className="font-medium text-foreground">{getSelectedTeam()}</span>
+              </div>
+            </div>
+            
+            <h3 className="font-semibold text-base leading-tight" data-testid={`text-bet-type-${bet.id}`}>
               {bet.betType}
             </h3>
           </div>
+          
           <div className="text-right">
             <div className="text-2xl font-bold" data-testid={`text-odds-${bet.id}`}>
               {Number(bet.odds).toFixed(2)}
@@ -88,6 +143,7 @@ export default function BetCard({ bet, onResolve, showResolveActions = true }: B
       </CardHeader>
       
       <CardContent className="space-y-4">
+        {/* Financial Information */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <div className="text-sm text-muted-foreground">Valor apostado</div>
@@ -96,14 +152,68 @@ export default function BetCard({ bet, onResolve, showResolveActions = true }: B
             </div>
           </div>
           <div className="space-y-1">
-            <div className="text-sm text-muted-foreground">Lucro potencial</div>
-            <div className="font-semibold text-lg flex items-center gap-1" data-testid={`text-potential-profit-${bet.id}`}>
-              <TrendingUp className="w-4 h-4 text-success" />
-              {formatCurrency(calculateProfit().toString())}
+            <div className="text-sm text-muted-foreground">Retorno potencial</div>
+            <div className="font-semibold text-lg" data-testid={`text-payout-${bet.id}`}>
+              {formatCurrency(bet.payout)}
             </div>
           </div>
         </div>
 
+        {/* Pair Information */}
+        {pairInfo && (
+          <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Link2 className="w-4 h-4" />
+              Informações do Par
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <div className="text-muted-foreground">Total investido</div>
+                <div className="font-semibold">{formatCurrency(pairInfo.totalStake)}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">ROI se ganhar</div>
+                <div className={`font-semibold flex items-center gap-1 ${pairInfo.isPositive ? 'text-success' : 'text-destructive'}`}>
+                  {pairInfo.isPositive ? (
+                    <TrendingUp className="w-3 h-3" />
+                  ) : (
+                    <TrendingDown className="w-3 h-3" />
+                  )}
+                  {pairInfo.profitPercentage.toFixed(2)}%
+                </div>
+              </div>
+            </div>
+            {pairInfo.isPositive && (
+              <div className="text-xs text-muted-foreground">
+                Lucro líquido: {formatCurrency(pairInfo.netProfit)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Paired Bet Info */}
+        {pairedBet && (
+          <div className="p-3 border rounded-lg space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <div className="font-medium">Aposta pareada ({pairedBet.betPosition})</div>
+              <Badge className={statusConfig[pairedBet.status].className}>
+                {statusConfig[pairedBet.status].label}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <div className="text-muted-foreground">{pairedBet.bettingHouse}</div>
+                <div className="font-medium">{pairedBet.selectedSide === 'A' ? pairedBet.teamA : pairedBet.teamB}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Odd {Number(pairedBet.odds).toFixed(2)}</div>
+                <div className="font-medium">{formatCurrency(pairedBet.stake)}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Game Date */}
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="w-4 h-4" />
           <span data-testid={`text-game-date-${bet.id}`}>
@@ -111,6 +221,7 @@ export default function BetCard({ bet, onResolve, showResolveActions = true }: B
           </span>
         </div>
 
+        {/* Resolve Actions */}
         {showResolveActions && bet.status === 'pending' && (
           <div className="flex gap-2 pt-2">
             <Button
@@ -145,11 +256,20 @@ export default function BetCard({ bet, onResolve, showResolveActions = true }: B
           </div>
         )}
 
+        {/* Result Display */}
         {bet.status !== 'pending' && (
           <div className={`p-3 rounded-lg border text-center ${config.textColor}`}>
             <StatusIcon className="w-5 h-5 mx-auto mb-1" />
             <div className="font-medium">
-              {bet.status === 'won' && `Lucro: ${formatCurrency(calculateProfit().toString())}`}
+              {bet.status === 'won' && pairInfo && (
+                <>
+                  <div>Lucro líquido: {formatCurrency(pairInfo.netProfit)}</div>
+                  <div className="text-xs mt-1">ROI: {pairInfo.profitPercentage.toFixed(2)}%</div>
+                </>
+              )}
+              {bet.status === 'won' && !pairInfo && (
+                `Lucro: ${formatCurrency(calculateNetProfit())}`
+              )}
               {bet.status === 'lost' && `Perda: ${formatCurrency(bet.stake)}`}
               {bet.status === 'returned' && `Valor devolvido: ${formatCurrency(bet.stake)}`}
             </div>

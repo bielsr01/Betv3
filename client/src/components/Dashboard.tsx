@@ -49,7 +49,7 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
     totalStaked: bets.reduce((acc, bet) => acc + Number(bet.stake), 0),
     totalProfit: bets
       .filter(bet => bet.status === 'won')
-      .reduce((acc, bet) => acc + (Number(bet.potentialProfit) - Number(bet.stake)), 0),
+      .reduce((acc, bet) => acc + (Number(bet.payout) - Number(bet.stake)), 0),
     totalLoss: bets
       .filter(bet => bet.status === 'lost')
       .reduce((acc, bet) => acc + Number(bet.stake), 0)
@@ -224,14 +224,23 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredBets.map((bet) => (
-            <BetCard
-              key={bet.id}
-              bet={bet}
-              onResolve={onResolveBet}
-              showResolveActions={bet.status === 'pending'}
-            />
-          ))}
+          {filteredBets.map((bet) => {
+            // Find the paired bet
+            const pairedBet = bets.find(b => 
+              b.pairId === bet.pairId && 
+              b.id !== bet.id
+            );
+            
+            return (
+              <BetCard
+                key={bet.id}
+                bet={bet}
+                pairedBet={pairedBet}
+                onResolve={onResolveBet}
+                showResolveActions={bet.status === 'pending'}
+              />
+            );
+          })}
         </div>
       )}
 
