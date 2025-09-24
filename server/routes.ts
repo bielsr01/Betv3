@@ -80,10 +80,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Analysis endpoint with speed optimization
+  // OCR Analysis endpoint using fast local Tesseract
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
-      const { imageBase64, fastMode = false } = req.body;
+      const { imageBase64 } = req.body;
       
       if (!imageBase64) {
         return res.status(400).json({ error: 'Image data is required' });
@@ -96,20 +96,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const startTime = Date.now();
       
-      // Import and use optimized Gemini OCR function
-      const { analyzeSureBetImage } = await import('./gemini-ocr');
-      const result = await analyzeSureBetImage(imageBase64);
+      // Import and use fast local OCR function
+      const { analyzeSureBetImageLocal } = await import('./local-ocr');
+      const result = await analyzeSureBetImageLocal(imageBase64);
       
       const processingTime = Date.now() - startTime;
-      console.log(`OCR processing completed in ${processingTime}ms`);
+      console.log(`Local OCR processing completed in ${processingTime}ms`);
       
       res.json({
         ...result,
         processingTime: `${processingTime}ms`
       });
     } catch (error) {
-      console.error('OCR analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image with AI' });
+      console.error('Local OCR analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image with local OCR' });
     }
   });
 
