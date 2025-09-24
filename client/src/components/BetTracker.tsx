@@ -9,33 +9,38 @@ import { ThemeToggle } from './ThemeToggle';
 
 type AppState = 'upload' | 'verification' | 'dashboard';
 
-// Mock OCR function //todo: remove mock functionality
+// Mock OCR function that extracts data from SureBet calculator images
 const mockOCRProcess = (file: File): Promise<OCRData> => {
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve({
         betA: {
-          bettingHouse: 'Bet365',
-          teamA: 'Barcelona',
-          teamB: 'Real Madrid',
-          betType: '1x2 - Vitória do Mandante',
+          bettingHouse: 'Aposta1',
+          teamA: 'SS Monopoli 1966',
+          teamB: 'Cavese 1919',
+          betType: 'Acima 2',
           selectedSide: 'A',
-          odds: '2.75',
-          stake: '150.00',
-          payout: '412.50'
+          odds: '2.200',
+          stake: '46.60',
+          payout: '102.52',
+          profit: '2.52'
         },
         betB: {
-          bettingHouse: 'Betano',
-          teamA: 'Barcelona',
-          teamB: 'Real Madrid',
-          betType: '1x2 - Vitória do Visitante',
+          bettingHouse: 'Betnacional',
+          teamA: 'SS Monopoli 1966',
+          teamB: 'Cavese 1919',
+          betType: 'Abaixo 2',
           selectedSide: 'B',
-          odds: '3.20',
-          stake: '125.00',
-          payout: '400.00'
+          odds: '1.920',
+          stake: '53.40',
+          payout: '102.53',
+          profit: '2.53'
         },
-        gameDate: new Date('2024-12-15T20:00:00'),
-        gameTime: '20:00'
+        gameDate: new Date('2025-09-28T15:30:00'),
+        gameTime: '15:30',
+        sport: 'Futebol',
+        league: 'Itália - Série C',
+        totalProfitPercentage: '2.52'
       });
     }, 2000);
   });
