@@ -62,7 +62,7 @@ async function runPaddleOCR(imageBuffer: Buffer): Promise<SureBetOCRResult> {
       const tempPath = path.join(tmpdir(), `bet_image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.png`);
       await fs.writeFile(tempPath, imageBuffer);
       
-      const scriptPath = path.join(process.cwd(), 'server', 'paddleocr_service.py');
+      const scriptPath = path.join(process.cwd(), 'server', 'easyocr_service.py');
       const pythonProcess = spawn('python3', [scriptPath]);
       
       let stdout = '';
@@ -85,13 +85,13 @@ async function runPaddleOCR(imageBuffer: Buffer): Promise<SureBetOCRResult> {
         }
         
         if (stderr) {
-          console.log('PaddleOCR processing info:', stderr);
+          console.log('Tesseract OCR processing info:', stderr);
         }
         
         if (code !== 0) {
-          console.error('PaddleOCR process failed with code:', code);
+          console.error('Tesseract OCR process failed with code:', code);
           console.error('Error output:', stderr);
-          reject(new Error(`PaddleOCR process failed with exit code ${code}`));
+          reject(new Error(`Tesseract OCR process failed with exit code ${code}`));
           return;
         }
         
@@ -107,17 +107,17 @@ async function runPaddleOCR(imageBuffer: Buffer): Promise<SureBetOCRResult> {
           const fullText = ocrOutput.text || '';
           const result = parseSureBetText(fullText);
           
-          console.log('PaddleOCR extraction completed successfully');
+          console.log('Tesseract OCR extraction completed successfully');
           resolve(result);
         } catch (parseError) {
-          console.error('Failed to parse PaddleOCR output:', stdout);
-          reject(new Error('Failed to parse PaddleOCR output'));
+          console.error('Failed to parse Tesseract OCR output:', stdout);
+          reject(new Error('Failed to parse Tesseract OCR output'));
         }
       });
       
       pythonProcess.on('error', (error) => {
-        console.error('Failed to start PaddleOCR process:', error);
-        reject(new Error('Failed to start PaddleOCR process'));
+        console.error('Failed to start Tesseract OCR process:', error);
+        reject(new Error('Failed to start Tesseract OCR process'));
       });
       
       // Send the image path via stdin
@@ -125,7 +125,7 @@ async function runPaddleOCR(imageBuffer: Buffer): Promise<SureBetOCRResult> {
       pythonProcess.stdin.end();
       
     } catch (error) {
-      console.error('Error setting up PaddleOCR process:', error);
+      console.error('Error setting up Tesseract OCR process:', error);
       reject(error);
     }
   });
