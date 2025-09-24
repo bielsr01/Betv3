@@ -14,11 +14,28 @@ const mockOCRProcess = (file: File): Promise<OCRData> => {
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve({
-        bettingHouse: 'Bet365',
-        betType: '1x2 - Vitória do Mandante',
-        odds: '2.75',
-        stake: '150.00',
-        potentialProfit: '412.50'
+        betA: {
+          bettingHouse: 'Bet365',
+          teamA: 'Barcelona',
+          teamB: 'Real Madrid',
+          betType: '1x2 - Vitória do Mandante',
+          selectedSide: 'A',
+          odds: '2.75',
+          stake: '150.00',
+          payout: '412.50'
+        },
+        betB: {
+          bettingHouse: 'Betano',
+          teamA: 'Barcelona',
+          teamB: 'Real Madrid',
+          betType: '1x2 - Vitória do Visitante',
+          selectedSide: 'B',
+          odds: '3.20',
+          stake: '125.00',
+          payout: '400.00'
+        },
+        gameDate: new Date('2024-12-15T20:00:00'),
+        gameTime: '20:00'
       });
     }, 2000);
   });
@@ -73,30 +90,70 @@ export default function BetTracker() {
     }
   };
 
-  const handleOCRConfirm = (data: OCRData & { gameDate: Date; gameTime: string }) => {
-    // Create new bet //todo: replace with API call
-    const newBet: Bet = {
+  const handleOCRConfirm = (data: OCRData) => {
+    // Generate pair ID for the two bets
+    const pairId = Math.random().toString(36).substr(2, 9);
+    
+    // Calculate pair metrics
+    const stakeA = Number(data.betA.stake);
+    const stakeB = Number(data.betB.stake);
+    const payoutA = Number(data.betA.payout);
+    const payoutB = Number(data.betB.payout);
+    const totalStake = stakeA + stakeB;
+    // Profit percentage if this bet wins: (winning payout - total invested) / total invested
+    const profitPercentageA = totalStake > 0 ? ((payoutA - totalStake) / totalStake) * 100 : 0;
+    const profitPercentageB = totalStake > 0 ? ((payoutB - totalStake) / totalStake) * 100 : 0;
+    
+    // Create bet A //todo: replace with API call
+    const betA: Bet = {
       id: Math.random().toString(36).substr(2, 9),
-      bettingHouse: data.bettingHouse,
-      betType: data.betType,
-      odds: data.odds,
-      stake: data.stake,
-      potentialProfit: data.potentialProfit,
+      bettingHouse: data.betA.bettingHouse,
+      teamA: data.betA.teamA,
+      teamB: data.betA.teamB,
+      betType: data.betA.betType,
+      selectedSide: data.betA.selectedSide,
+      odds: data.betA.odds,
+      stake: data.betA.stake,
+      payout: data.betA.payout,
       gameDate: data.gameDate,
       status: 'pending',
       isVerified: true,
-      pairId: null,
+      pairId: pairId,
+      betPosition: 'A',
+      totalPairStake: totalStake.toString(),
+      profitPercentage: profitPercentageA.toString(),
       createdAt: new Date()
     };
     
-    setBets(prev => [newBet, ...prev]);
+    // Create bet B //todo: replace with API call
+    const betB: Bet = {
+      id: Math.random().toString(36).substr(2, 9),
+      bettingHouse: data.betB.bettingHouse,
+      teamA: data.betB.teamA,
+      teamB: data.betB.teamB,
+      betType: data.betB.betType,
+      selectedSide: data.betB.selectedSide,
+      odds: data.betB.odds,
+      stake: data.betB.stake,
+      payout: data.betB.payout,
+      gameDate: data.gameDate,
+      status: 'pending',
+      isVerified: true,
+      pairId: pairId,
+      betPosition: 'B',
+      totalPairStake: totalStake.toString(),
+      profitPercentage: profitPercentageB.toString(),
+      createdAt: new Date()
+    };
+    
+    setBets(prev => [betA, betB, ...prev]);
     
     // Clean up and navigate to dashboard
     setCurrentImageUrl('');
     setCurrentOCRData(null);
     setCurrentState('dashboard');
     
-    console.log('Bet saved:', newBet);
+    console.log('Bet pair saved:', { betA, betB });
   };
 
   const handleOCRCancel = () => {
@@ -107,11 +164,29 @@ export default function BetTracker() {
 
   const handleResolveBet = (betId: string, status: 'won' | 'lost' | 'returned') => {
     //todo: replace with API call
-    setBets(prev => 
-      prev.map(bet => 
-        bet.id === betId ? { ...bet, status } : bet
-      )
-    );
+    setBets(prev => {
+      const updatedBets = prev.map(bet => {
+        if (bet.id === betId) {
+          return { ...bet, status };
+        }
+        return bet;
+      });
+      
+      // If this bet won, automatically set its pair to lost (for opposing bets)
+      if (status === 'won') {
+        const resolvedBet = prev.find(bet => bet.id === betId);
+        if (resolvedBet?.pairId) {
+          return updatedBets.map(bet => {
+            if (bet.pairId === resolvedBet.pairId && bet.id !== betId && bet.status === 'pending') {
+              return { ...bet, status: 'lost' };
+            }
+            return bet;
+          });
+        }
+      }
+      
+      return updatedBets;
+    });
     console.log(`Bet ${betId} resolved as: ${status}`);
   };
 

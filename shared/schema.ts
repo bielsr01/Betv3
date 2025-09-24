@@ -18,7 +18,7 @@ export const bets = pgTable("bets", {
   selectedSide: text("selected_side", { enum: ["A", "B"] }).notNull(), // Which side was bet on (A = teamA, B = teamB)
   odds: decimal("odds", { precision: 10, scale: 2 }).notNull(),
   stake: decimal("stake", { precision: 10, scale: 2 }).notNull(),
-  potentialProfit: decimal("potential_profit", { precision: 10, scale: 2 }).notNull(),
+  payout: decimal("payout", { precision: 10, scale: 2 }).notNull(),
   gameDate: timestamp("game_date").notNull().default(sql`now()`),
   status: text("status", { enum: ["pending", "won", "lost", "returned"] }).notNull().default("pending"),
   isVerified: boolean("is_verified").notNull().default(false),
@@ -53,7 +53,7 @@ export const singleBetOCRSchema = z.object({
   selectedSide: z.enum(["A", "B"], { errorMap: () => ({ message: "Lado selecionado deve ser A ou B" }) }),
   odds: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Odd deve ser um número válido"),
   stake: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Valor da aposta deve ser um número válido"),
-  potentialProfit: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Lucro potencial deve ser um número válido"),
+  payout: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Retorno deve ser um número válido"),
 });
 
 // OCR extracted data for paired bets (two opposing bets)
@@ -64,8 +64,10 @@ export const ocrDataSchema = z.object({
   gameTime: z.string().optional(),
 }).refine(
   (data) => {
-    // Ensure teams are consistent across both bets
-    return data.betA.teamA === data.betB.teamA && data.betA.teamB === data.betB.teamB;
+    // Ensure teams are consistent across both bets (normalized comparison)
+    const normalize = (team: string) => team.trim().toLowerCase();
+    return normalize(data.betA.teamA) === normalize(data.betB.teamA) && 
+           normalize(data.betA.teamB) === normalize(data.betB.teamB);
   },
   {
     message: "Times devem ser consistentes entre as duas apostas",
@@ -86,10 +88,10 @@ export type SingleBetOCR = z.infer<typeof singleBetOCRSchema>;
 export type OCRData = z.infer<typeof ocrDataSchema>;
 
 // Helper functions for bet pair calculations
-export const calculatePairMetrics = (stakeA: number, stakeB: number, profitA: number, profitB: number) => {
+export const calculatePairMetrics = (stakeA: number, stakeB: number, payoutA: number, payoutB: number) => {
   const totalStake = stakeA + stakeB;
-  const profitPercentageA = totalStake > 0 ? ((profitA - totalStake) / totalStake) * 100 : 0;
-  const profitPercentageB = totalStake > 0 ? ((profitB - totalStake) / totalStake) * 100 : 0;
+  const profitPercentageA = totalStake > 0 ? ((payoutA - totalStake) / totalStake) * 100 : 0;
+  const profitPercentageB = totalStake > 0 ? ((payoutB - totalStake) / totalStake) * 100 : 0;
   
   return {
     totalStake,
