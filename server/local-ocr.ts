@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { spawn } from 'child_process';
+import { tmpdir } from 'os';
 
 export interface SureBetOCRResult {
   betA: {
@@ -31,80 +32,102 @@ export interface SureBetOCRResult {
 
 export async function analyzeSureBetImageLocal(imageBase64: string): Promise<SureBetOCRResult> {
   try {
-    console.log('Starting EasyOCR processing - FULL VERSION...');
+    console.log('Starting PaddleOCR processing...');
     
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(imageBase64, 'base64');
     
-    // Optimize image for EasyOCR - better quality processing
+    // Optimize image for PaddleOCR - balanced quality and performance
     const processedBuffer = await sharp(imageBuffer)
-      .resize(2000, 2800, { fit: 'inside', withoutEnlargement: true }) // Higher resolution for EasyOCR
+      .resize(1800, 2400, { fit: 'inside', withoutEnlargement: true }) // Optimal resolution for PaddleOCR
       .normalize() // Enhance contrast for better text recognition
-      .sharpen({ sigma: 1.0 }) // Moderate sharpening
-      .png({ quality: 100 }) // Maximum quality
+      .sharpen({ sigma: 0.8 }) // Light sharpening
+      .png({ quality: 95 }) // High quality
       .toBuffer();
 
-    // Convert to base64 for EasyOCR Python script
-    const processedBase64 = processedBuffer.toString('base64');
-
-    // Use FULL EasyOCR implementation
-    const result = await runFullEasyOCR(processedBase64);
+    // Use PaddleOCR implementation with temp file
+    const result = await runPaddleOCR(processedBuffer);
     
     return result;
   } catch (error) {
-    console.error('EasyOCR processing failed:', error);
-    throw new Error('Failed to process image with EasyOCR');
+    console.error('PaddleOCR processing failed:', error);
+    throw new Error('Failed to process image with PaddleOCR');
   }
 }
 
-async function runFullEasyOCR(imageBase64: string): Promise<SureBetOCRResult> {
-  return new Promise((resolve, reject) => {
-    const scriptPath = path.join(process.cwd(), 'server', 'full-easyocr-service.py');
-    const pythonProcess = spawn('python3', [scriptPath, imageBase64]);
-    
-    let stdout = '';
-    let stderr = '';
-    
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    pythonProcess.on('close', (code) => {
-      if (stderr) {
-        console.log('EasyOCR processing info:', stderr);
-      }
+async function runPaddleOCR(imageBuffer: Buffer): Promise<SureBetOCRResult> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Write image to temporary file for PaddleOCR
+      const tempPath = path.join(tmpdir(), `bet_image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.png`);
+      await fs.writeFile(tempPath, imageBuffer);
       
-      if (code !== 0) {
-        console.error('EasyOCR process failed with code:', code);
-        console.error('Error output:', stderr);
-        reject(new Error(`EasyOCR process failed with exit code ${code}`));
-        return;
-      }
+      const scriptPath = path.join(process.cwd(), 'server', 'paddleocr_service.py');
+      const pythonProcess = spawn('python3', [scriptPath]);
       
-      try {
-        const result = JSON.parse(stdout.trim());
+      let stdout = '';
+      let stderr = '';
+      
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      pythonProcess.on('close', async (code) => {
+        // Cleanup temp file
+        try {
+          await fs.unlink(tempPath);
+        } catch (e) {
+          console.warn('Failed to cleanup temp file:', tempPath);
+        }
         
-        if (result.error) {
-          reject(new Error(result.error));
+        if (stderr) {
+          console.log('PaddleOCR processing info:', stderr);
+        }
+        
+        if (code !== 0) {
+          console.error('PaddleOCR process failed with code:', code);
+          console.error('Error output:', stderr);
+          reject(new Error(`PaddleOCR process failed with exit code ${code}`));
           return;
         }
         
-        console.log('EasyOCR extraction completed successfully');
-        resolve(result);
-      } catch (parseError) {
-        console.error('Failed to parse EasyOCR output:', stdout);
-        reject(new Error('Failed to parse EasyOCR output'));
-      }
-    });
-    
-    pythonProcess.on('error', (error) => {
-      console.error('Failed to start EasyOCR process:', error);
-      reject(new Error('Failed to start EasyOCR process'));
-    });
+        try {
+          const ocrOutput = JSON.parse(stdout.trim());
+          
+          if (ocrOutput.error) {
+            reject(new Error(ocrOutput.error));
+            return;
+          }
+          
+          // Parse the OCR text into SureBet format
+          const fullText = ocrOutput.text || '';
+          const result = parseSureBetText(fullText);
+          
+          console.log('PaddleOCR extraction completed successfully');
+          resolve(result);
+        } catch (parseError) {
+          console.error('Failed to parse PaddleOCR output:', stdout);
+          reject(new Error('Failed to parse PaddleOCR output'));
+        }
+      });
+      
+      pythonProcess.on('error', (error) => {
+        console.error('Failed to start PaddleOCR process:', error);
+        reject(new Error('Failed to start PaddleOCR process'));
+      });
+      
+      // Send the image path via stdin
+      pythonProcess.stdin.write(JSON.stringify({ image_path: tempPath }) + '\n');
+      pythonProcess.stdin.end();
+      
+    } catch (error) {
+      console.error('Error setting up PaddleOCR process:', error);
+      reject(error);
+    }
   });
 }
 

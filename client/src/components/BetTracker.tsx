@@ -8,24 +8,24 @@ import Dashboard from './Dashboard';
 import BetManagement from './BetManagement';
 import Reports from './Reports';
 import { ThemeToggle } from './ThemeToggle';
-// Removed Tesseract.js - now using Gemini Vision API
+// Using PaddleOCR for real text recognition from images
 import { apiRequest } from '@/lib/queryClient';
 
 type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports';
 
-// OCR function using fast local Tesseract
+// OCR function using PaddleOCR
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
   try {
-    console.log('Starting fast local OCR processing...');
+    console.log('Starting PaddleOCR processing...');
     
-    // Convert and compress image to reduce processing time
+    // Convert and compress image for optimal OCR processing
     const base64 = await new Promise<string>((resolve) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d')!;
       const img = new Image();
       
       img.onload = () => {
-        // Resize image to max 800px (never upscale) for much faster processing
+        // Resize image to max 800px (never upscale) for optimal OCR processing
         const maxDim = 800;
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         const width = img.width * scale;
@@ -36,7 +36,7 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
         
         ctx.drawImage(img, 0, 0, width, height);
         
-        // Convert to JPEG with 75% quality for much smaller file size
+        // Convert to JPEG with 75% quality for efficient processing
         const base64Data = canvas.toDataURL('image/jpeg', 0.75).split(',')[1];
         resolve(base64Data);
       };
@@ -48,7 +48,7 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
       reader.readAsDataURL(file);
     });
     
-    // Call backend API for fast local OCR analysis
+    // Call backend API for PaddleOCR analysis
     const response = await fetch('/api/ocr/analyze', {
       method: 'POST',
       headers: {
@@ -58,17 +58,17 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
     });
     
     if (!response.ok) {
-      throw new Error('Failed to analyze image with local OCR');
+      throw new Error('Failed to analyze image with PaddleOCR');
     }
     
     const ocrData = await response.json();
-    console.log('Local OCR result:', ocrData);
+    console.log('PaddleOCR result:', ocrData);
     
     // Convert OCR response to our OCRData format
     return convertOCRToFormat(ocrData);
     
   } catch (error) {
-    console.error('Local OCR processing failed:', error);
+    console.error('PaddleOCR processing failed:', error);
     throw new Error('Falha ao processar imagem. Tente novamente.');
   }
 };

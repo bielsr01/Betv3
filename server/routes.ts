@@ -80,7 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Analysis endpoint using fast local Tesseract
+  // OCR Analysis endpoint using PaddleOCR
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -96,20 +96,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const startTime = Date.now();
       
-      // Import and use fast local OCR function
+      // Import and use PaddleOCR function
       const { analyzeSureBetImageLocal } = await import('./local-ocr');
       const result = await analyzeSureBetImageLocal(imageBase64);
       
       const processingTime = Date.now() - startTime;
-      console.log(`Local OCR processing completed in ${processingTime}ms`);
+      console.log(`PaddleOCR processing completed in ${processingTime}ms`);
       
       res.json({
         ...result,
         processingTime: `${processingTime}ms`
       });
     } catch (error) {
-      console.error('Local OCR analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image with local OCR' });
+      console.error('PaddleOCR analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image with PaddleOCR' });
     }
   });
 
