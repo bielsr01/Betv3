@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { Home, Upload, BarChart3, Settings, Target } from 'lucide-react';
+import { Home, Upload, BarChart3, Settings, Target, FileText } from 'lucide-react';
 import { OCRData, Bet } from '@shared/schema';
 import ImageUpload from './ImageUpload';
 import OCRVerification from './OCRVerification';
 import Dashboard from './Dashboard';
+import BetManagement from './BetManagement';
+import Reports from './Reports';
 import { ThemeToggle } from './ThemeToggle';
 import Tesseract from 'tesseract.js';
+import { apiRequest } from '@/lib/queryClient';
 
-type AppState = 'upload' | 'verification' | 'dashboard';
+type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports';
 
 // OCR function to extract data from SureBet calculator images using Tesseract.js
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
@@ -180,10 +183,16 @@ export default function BetTracker() {
       active: currentState === 'upload'
     },
     {
+      title: 'Gestão de Apostas',
+      icon: Settings,
+      id: 'management' as AppState,
+      active: currentState === 'management'
+    },
+    {
       title: 'Relatórios',
       icon: BarChart3,
-      id: 'dashboard' as AppState, // For now, redirect to dashboard
-      active: false
+      id: 'reports' as AppState,
+      active: currentState === 'reports'
     }
   ];
 
