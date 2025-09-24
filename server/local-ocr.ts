@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import sharp from 'sharp';
-import { createWorker } from 'tesseract.js';
+import { spawn } from 'child_process';
 
 export interface SureBetOCRResult {
   betA: {
@@ -31,55 +31,81 @@ export interface SureBetOCRResult {
 
 export async function analyzeSureBetImageLocal(imageBase64: string): Promise<SureBetOCRResult> {
   try {
-    console.log('Starting real OCR processing with Tesseract.js...');
+    console.log('Starting EasyOCR processing - FULL VERSION...');
     
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(imageBase64, 'base64');
     
-    // Optimize image for better OCR accuracy
+    // Optimize image for EasyOCR - better quality processing
     const processedBuffer = await sharp(imageBuffer)
-      .resize(1600, 2000, { fit: 'inside', withoutEnlargement: true })
-      .grayscale() // Convert to grayscale for better text recognition
-      .normalize() // Enhance contrast
-      .sharpen({ sigma: 1.2 }) // Sharpen text
-      .png({ quality: 100 })
+      .resize(2000, 2800, { fit: 'inside', withoutEnlargement: true }) // Higher resolution for EasyOCR
+      .normalize() // Enhance contrast for better text recognition
+      .sharpen({ sigma: 1.0 }) // Moderate sharpening
+      .png({ quality: 100 }) // Maximum quality
       .toBuffer();
 
-    // Perform OCR with Tesseract.js
-    const extractedText = await performOCR(processedBuffer);
-    console.log('OCR extracted text:', extractedText);
+    // Convert to base64 for EasyOCR Python script
+    const processedBase64 = processedBuffer.toString('base64');
 
-    // Parse the real extracted text to structured data
-    const result = parseSureBetText(extractedText);
+    // Use FULL EasyOCR implementation
+    const result = await runFullEasyOCR(processedBase64);
     
     return result;
   } catch (error) {
-    console.error('OCR processing failed:', error);
-    throw new Error('Failed to process image with OCR');
+    console.error('EasyOCR processing failed:', error);
+    throw new Error('Failed to process image with EasyOCR');
   }
 }
 
-async function performOCR(imageBuffer: Buffer): Promise<string> {
-  const worker = await createWorker('eng+por', 1, {
-    logger: m => {
-      if (m.status === 'recognizing text') {
-        console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
-      }
-    }
-  });
-
-  try {
-    // Configure Tesseract for better text recognition
-    await worker.setParameters({
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,%-+()[]ÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü ',
-      tessedit_pageseg_mode: 6, // Uniform block of text
+async function runFullEasyOCR(imageBase64: string): Promise<SureBetOCRResult> {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(process.cwd(), 'server', 'full-easyocr-service.py');
+    const pythonProcess = spawn('python3', [scriptPath, imageBase64]);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
     });
-
-    const { data: { text } } = await worker.recognize(imageBuffer);
-    return text;
-  } finally {
-    await worker.terminate();
-  }
+    
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (stderr) {
+        console.log('EasyOCR processing info:', stderr);
+      }
+      
+      if (code !== 0) {
+        console.error('EasyOCR process failed with code:', code);
+        console.error('Error output:', stderr);
+        reject(new Error(`EasyOCR process failed with exit code ${code}`));
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(stdout.trim());
+        
+        if (result.error) {
+          reject(new Error(result.error));
+          return;
+        }
+        
+        console.log('EasyOCR extraction completed successfully');
+        resolve(result);
+      } catch (parseError) {
+        console.error('Failed to parse EasyOCR output:', stdout);
+        reject(new Error('Failed to parse EasyOCR output'));
+      }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      console.error('Failed to start EasyOCR process:', error);
+      reject(new Error('Failed to start EasyOCR process'));
+    });
+  });
 }
 
 function parseSureBetText(text: string): SureBetOCRResult {
