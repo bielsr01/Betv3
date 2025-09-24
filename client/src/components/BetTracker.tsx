@@ -13,10 +13,10 @@ import { apiRequest } from '@/lib/queryClient';
 
 type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports';
 
-// OCR function using Gemini Vision API
+// OCR function using fast local Tesseract
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
   try {
-    console.log('Starting Gemini Vision OCR processing...');
+    console.log('Starting fast local OCR processing...');
     
     // Convert and compress image to reduce processing time
     const base64 = await new Promise<string>((resolve) => {
@@ -48,7 +48,7 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
       reader.readAsDataURL(file);
     });
     
-    // Call backend API for Gemini Vision analysis
+    // Call backend API for fast local OCR analysis
     const response = await fetch('/api/ocr/analyze', {
       method: 'POST',
       headers: {
@@ -58,18 +58,18 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
     });
     
     if (!response.ok) {
-      throw new Error('Failed to analyze image with Gemini Vision');
+      throw new Error('Failed to analyze image with local OCR');
     }
     
-    const geminiData = await response.json();
-    console.log('Gemini Vision OCR result:', geminiData);
+    const ocrData = await response.json();
+    console.log('Local OCR result:', ocrData);
     
-    // Convert Gemini response to our OCRData format
-    return convertGeminiToOCRFormat(geminiData);
+    // Convert OCR response to our OCRData format
+    return convertOCRToFormat(ocrData);
     
   } catch (error) {
-    console.error('Gemini Vision OCR processing failed:', error);
-    throw new Error('Falha ao processar imagem com IA. Tente novamente.');
+    console.error('Local OCR processing failed:', error);
+    throw new Error('Falha ao processar imagem. Tente novamente.');
   }
 };
 
@@ -308,42 +308,46 @@ const parseOCRText = (text: string): OCRData => {
   }
 };
 
-// Helper function to convert Gemini response to our format
-const convertGeminiToOCRFormat = (geminiData: any): OCRData => {
+// Helper function to convert OCR response to our format
+const convertOCRToFormat = (ocrData: any): OCRData => {
   // Calculate payouts: payout = stake × odds
-  const betAPayout = geminiData.betA.stake && geminiData.betA.odds ? 
-    (parseFloat(geminiData.betA.stake) * parseFloat(geminiData.betA.odds)).toFixed(2) : '0';
-  const betBPayout = geminiData.betB.stake && geminiData.betB.odds ? 
-    (parseFloat(geminiData.betB.stake) * parseFloat(geminiData.betB.odds)).toFixed(2) : '0';
+  const betAPayout = ocrData.betA.stake && ocrData.betA.odds ? 
+    (parseFloat(ocrData.betA.stake) * parseFloat(ocrData.betA.odds)).toFixed(2) : '0';
+  const betBPayout = ocrData.betB.stake && ocrData.betB.odds ? 
+    (parseFloat(ocrData.betB.stake) * parseFloat(ocrData.betB.odds)).toFixed(2) : '0';
+
+  // FIXED: Extract only the number from totalProfitPercentage, removing any % symbol
+  const profitPercentage = ocrData.totalProfitPercentage ? 
+    ocrData.totalProfitPercentage.toString().replace('%', '') : '0';
 
   return {
     betA: {
-      bettingHouse: geminiData.betA.bettingHouse || '',
-      teamA: geminiData.betA.teamA || '',
-      teamB: geminiData.betA.teamB || '',
-      betType: geminiData.betA.betType || '',
+      bettingHouse: ocrData.betA.bettingHouse || '',
+      teamA: ocrData.betA.teamA || '',
+      teamB: ocrData.betA.teamB || '',
+      betType: ocrData.betA.betType || '',
       selectedSide: 'A',
-      odds: geminiData.betA.odds || '0',
-      stake: geminiData.betA.stake || '0',
+      odds: ocrData.betA.odds || '0',
+      stake: ocrData.betA.stake || '0',
       payout: betAPayout,
-      profit: geminiData.betA.profit || '0'
+      profit: ocrData.betA.profit || '0'
     },
     betB: {
-      bettingHouse: geminiData.betB.bettingHouse || '',
-      teamA: geminiData.betB.teamA || '',
-      teamB: geminiData.betB.teamB || '',
-      betType: geminiData.betB.betType || '',
+      bettingHouse: ocrData.betB.bettingHouse || '',
+      teamA: ocrData.betB.teamA || '',
+      teamB: ocrData.betB.teamB || '',
+      betType: ocrData.betB.betType || '',
       selectedSide: 'B',
-      odds: geminiData.betB.odds || '0',
-      stake: geminiData.betB.stake || '0',
+      odds: ocrData.betB.odds || '0',
+      stake: ocrData.betB.stake || '0',
       payout: betBPayout,
-      profit: geminiData.betB.profit || '0'
+      profit: ocrData.betB.profit || '0'
     },
-    gameDate: geminiData.gameDate || new Date().toISOString().split('T')[0],
-    gameTime: geminiData.gameTime || '00:00',
-    sport: geminiData.sport || '',
-    league: geminiData.league || '',
-    totalProfitPercentage: geminiData.totalProfitPercentage || '0'
+    gameDate: ocrData.gameDate ? new Date(ocrData.gameDate) : new Date(),
+    gameTime: ocrData.gameTime || '00:00',
+    sport: ocrData.sport || '',
+    league: ocrData.league || '',
+    totalProfitPercentage: profitPercentage // FIXED: Now correctly extracts just the number
   };
 };
 
