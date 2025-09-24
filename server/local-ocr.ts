@@ -293,3 +293,122 @@ function parseBetLine(line: string, bet: any, bettingHouses: string[]) {
     console.error('Error parsing bet line:', error);
   }
 }
+
+// Interface for OCR blocks result
+export interface OCRBlocksResult {
+  total_blocks: number;
+  lines: Array<{
+    line_key: string;
+    full_text: string;
+    blocks: Array<{
+      text: string;
+      confidence: number;
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      level: number;
+      block_num: number;
+      par_num: number;
+      line_num: number;
+      word_num: number;
+    }>;
+    avg_confidence: number;
+    top: number;
+    left: number;
+    right: number;
+    bottom: number;
+  }>;
+  raw_blocks: Array<any>;
+}
+
+export async function analyzeImageBlocks(imageBase64: string): Promise<OCRBlocksResult> {
+  try {
+    console.log('Starting Tesseract OCR blocks processing...');
+    
+    // Convert base64 to buffer
+    const imageBuffer = Buffer.from(imageBase64, 'base64');
+    
+    // Optimize image for Tesseract OCR
+    const processedBuffer = await sharp(imageBuffer)
+      .resize(1800, 2400, { fit: 'inside', withoutEnlargement: true })
+      .normalize()
+      .sharpen({ sigma: 0.8 })
+      .png({ quality: 95 })
+      .toBuffer();
+
+    // Use Tesseract OCR blocks implementation
+    const result = await runTesseractOCRBlocks(processedBuffer);
+    
+    return result;
+  } catch (error) {
+    console.error('Tesseract OCR blocks processing failed:', error);
+    throw new Error('Failed to process image blocks with Tesseract OCR');
+  }
+}
+
+async function runTesseractOCRBlocks(imageBuffer: Buffer): Promise<OCRBlocksResult> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Write image to temporary file for Tesseract OCR
+      const tempPath = path.join(tmpdir(), `bet_image_blocks_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.png`);
+      await fs.writeFile(tempPath, imageBuffer);
+      
+      const scriptPath = path.join(process.cwd(), 'server', 'ocr_blocks_service.py');
+      const pythonProcess = spawn('python3', [scriptPath, tempPath]);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+        console.log('Tesseract OCR blocks processing info:', data.toString().trim());
+      });
+      
+      pythonProcess.on('close', async (code) => {
+        try {
+          // Clean up temp file
+          await fs.unlink(tempPath).catch(() => {});
+          
+          if (code !== 0) {
+            console.error('Tesseract OCR blocks extraction failed:', stderr);
+            reject(new Error(`Tesseract OCR blocks process exited with code ${code}`));
+            return;
+          }
+          
+          if (!stdout.trim()) {
+            console.error('No output from Tesseract OCR blocks script');
+            reject(new Error('No text data extracted from image'));
+            return;
+          }
+          
+          try {
+            const blocksData = JSON.parse(stdout);
+            console.log('Tesseract OCR blocks extraction completed successfully');
+            resolve(blocksData);
+          } catch (parseError) {
+            console.error('Error parsing Tesseract OCR blocks output:', parseError);
+            console.log('Raw stdout:', stdout);
+            reject(new Error('Failed to parse OCR blocks extraction result'));
+          }
+        } catch (error) {
+          console.error('Error in Tesseract OCR blocks processing cleanup:', error);
+          reject(error);
+        }
+      });
+      
+      pythonProcess.on('error', (error) => {
+        console.error('Failed to start Tesseract OCR blocks process:', error);
+        reject(new Error('Failed to start OCR blocks process'));
+      });
+      
+    } catch (error) {
+      console.error('Error setting up Tesseract OCR blocks process:', error);
+      reject(error);
+    }
+  });
+}

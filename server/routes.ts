@@ -113,6 +113,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // OCR Blocks Analysis endpoint - extracts text in organized blocks with positions
+  app.post('/api/ocr/blocks', async (req, res) => {
+    try {
+      const { imageBase64 } = req.body;
+      
+      if (!imageBase64) {
+        return res.status(400).json({ error: 'Image data is required' });
+      }
+      
+      // Validate image size (prevent oversized uploads)
+      if (imageBase64.length > 4 * 1024 * 1024) { // ~3MB base64 limit
+        return res.status(413).json({ error: 'Image too large. Please use a smaller image.' });
+      }
+
+      const startTime = Date.now();
+      
+      // Import and use blocks OCR function
+      const { analyzeImageBlocks } = await import('./local-ocr');
+      const result = await analyzeImageBlocks(imageBase64);
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`Tesseract OCR blocks processing completed in ${processingTime}ms`);
+      
+      res.json({
+        ...result,
+        processingTime: `${processingTime}ms`
+      });
+    } catch (error) {
+      console.error('Tesseract OCR blocks analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image blocks with Tesseract OCR' });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
