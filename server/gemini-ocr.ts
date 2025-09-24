@@ -98,6 +98,18 @@ Important:
     }
   } catch (error) {
     console.error("Gemini OCR Error:", error);
-    throw new Error(`Failed to analyze SureBet image: ${error}`);
+    
+    // More specific error handling
+    if (error instanceof Error) {
+      if (error.message.includes('API key')) {
+        throw new Error('Chave API do Gemini inválida. Verifique a configuração.');
+      } else if (error.message.includes('quota')) {
+        throw new Error('Limite de uso da API Gemini excedido. Tente novamente mais tarde.');
+      } else if (error.message.includes('JSON')) {
+        throw new Error('Erro ao processar resposta da IA. A imagem pode estar corrompida.');
+      }
+    }
+    
+    throw new Error(`Falha ao analisar imagem SureBet: ${error}`);
   }
 }
