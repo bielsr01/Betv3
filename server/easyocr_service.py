@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Tesseract OCR Service for Real Text Recognition from Images
-Lightweight solution optimized for Replit environment
+Lightweight and reliable solution for Replit environment
 """
 import sys
 import json
@@ -43,9 +43,7 @@ def main():
         # Import libraries (after setting Python path)
         try:
             import pytesseract
-            import cv2
-            import numpy as np
-            from PIL import Image
+            from PIL import Image, ImageEnhance, ImageFilter
         except ImportError as e:
             print(json.dumps({"error": f"Tesseract import failed: {str(e)}"}))
             sys.exit(1)
@@ -55,31 +53,37 @@ def main():
         
         # Read and preprocess image
         print("Reading and preprocessing image...", file=sys.stderr)
-        image = cv2.imread(image_path)
         
-        if image is None:
-            print(json.dumps({"error": "Failed to read image file"}))
+        try:
+            # Load image with PIL
+            pil_image = Image.open(image_path)
+            
+            # Convert to grayscale for better OCR
+            if pil_image.mode != 'L':
+                pil_image = pil_image.convert('L')
+            
+            # Enhance image for better OCR results
+            # Increase contrast
+            enhancer = ImageEnhance.Contrast(pil_image)
+            pil_image = enhancer.enhance(1.5)
+            
+            # Increase sharpness
+            enhancer = ImageEnhance.Sharpness(pil_image)
+            pil_image = enhancer.enhance(1.2)
+            
+            # Apply slight smoothing to reduce noise
+            pil_image = pil_image.filter(ImageFilter.SMOOTH_MORE)
+            
+        except Exception as e:
+            print(json.dumps({"error": f"Failed to read/process image: {str(e)}"}))
             sys.exit(1)
-        
-        # Enhance image for better OCR results
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        # Apply CLAHE for better contrast
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(gray)
-        
-        # Slight denoising and sharpening
-        denoised = cv2.medianBlur(enhanced, 3)
-        
-        # Convert to PIL Image for Tesseract
-        pil_image = Image.fromarray(denoised)
         
         print("Starting Tesseract text extraction...", file=sys.stderr)
         extraction_start = time.time()
         
-        # Configure Tesseract for better results
+        # Configure Tesseract for better SureBet detection
         # PSM 6 = Assume a single uniform block of text
-        # PSM 3 = Fully automatic page segmentation (default)
+        # Characters allowed for betting data
         tesseract_config = '--psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:%()[]{}/-+$€£¥R$USD vs–—'
         
         # Extract text with detailed information

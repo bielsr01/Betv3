@@ -32,33 +32,33 @@ export interface SureBetOCRResult {
 
 export async function analyzeSureBetImageLocal(imageBase64: string): Promise<SureBetOCRResult> {
   try {
-    console.log('Starting PaddleOCR processing...');
+    console.log('Starting Tesseract OCR processing...');
     
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(imageBase64, 'base64');
     
-    // Optimize image for PaddleOCR - balanced quality and performance
+    // Optimize image for Tesseract OCR - balanced quality and performance
     const processedBuffer = await sharp(imageBuffer)
-      .resize(1800, 2400, { fit: 'inside', withoutEnlargement: true }) // Optimal resolution for PaddleOCR
+      .resize(1800, 2400, { fit: 'inside', withoutEnlargement: true }) // Optimal resolution for Tesseract OCR
       .normalize() // Enhance contrast for better text recognition
       .sharpen({ sigma: 0.8 }) // Light sharpening
       .png({ quality: 95 }) // High quality
       .toBuffer();
 
-    // Use PaddleOCR implementation with temp file
-    const result = await runPaddleOCR(processedBuffer);
+    // Use Tesseract OCR implementation with temp file
+    const result = await runTesseractOCR(processedBuffer);
     
     return result;
   } catch (error) {
     console.error('PaddleOCR processing failed:', error);
-    throw new Error('Failed to process image with PaddleOCR');
+    throw new Error('Failed to process image with Tesseract OCR');
   }
 }
 
-async function runPaddleOCR(imageBuffer: Buffer): Promise<SureBetOCRResult> {
+async function runTesseractOCR(imageBuffer: Buffer): Promise<SureBetOCRResult> {
   return new Promise(async (resolve, reject) => {
     try {
-      // Write image to temporary file for PaddleOCR
+      // Write image to temporary file for Tesseract OCR
       const tempPath = path.join(tmpdir(), `bet_image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.png`);
       await fs.writeFile(tempPath, imageBuffer);
       
