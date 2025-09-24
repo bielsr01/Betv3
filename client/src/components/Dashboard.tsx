@@ -40,23 +40,115 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
       }
     });
 
-  // Calculate statistics
+  // Group bets by pairs for correct statistics
+  const pairs = bets.reduce((acc, bet) => {
+    if (!acc[bet.pairId]) {
+      acc[bet.pairId] = [];
+    }
+    acc[bet.pairId].push(bet);
+    return acc;
+  }, {} as Record<string, Bet[]>);
+
+  const pairStats = Object.values(pairs).map(pairBets => {
+    // Sort bets by position to ensure consistent ordering
+    const sortedBets = pairBets.sort((a, b) => a.betPosition.localeCompare(b.betPosition));
+    const betA = sortedBets.find(bet => bet.betPosition === 'A');
+    const betB = sortedBets.find(bet => bet.betPosition === 'B');
+    
+    // Handle incomplete pairs (only one leg exists)
+    if (!betA && !betB) return null; // No bets found
+    if (!betA || !betB) {
+      const existingBet = betA || betB!;
+      return {
+        pairId: existingBet.pairId,
+        status: 'pending' as const,
+        totalStake: Number(existingBet.stake),
+        netResult: 0,
+        gameDate: existingBet.gameDate,
+        incomplete: true
+      };
+    }
+    
+    // Calculate stakes from individual bets
+    const stakeA = Number(betA.stake);
+    const stakeB = Number(betB.stake);
+    const totalStake = stakeA + stakeB;
+    
+    const statusA = betA.status;
+    const statusB = betB.status;
+    const returnedA = statusA === 'returned';
+    const returnedB = statusB === 'returned';
+    
+    // Find winning leg
+    const wonLeg = statusA === 'won' ? betA : statusB === 'won' ? betB : null;
+    
+    // Determine pair status and calculate net result
+    let pairStatus: 'pending' | 'won' | 'lost' | 'returned';
+    let netResult = 0;
+    
+    if (statusA === 'pending' || statusB === 'pending') {
+      pairStatus = 'pending';
+      netResult = 0;
+    } else if (returnedA && returnedB) {
+      // Both returned
+      pairStatus = 'returned';
+      netResult = 0; // Money back
+    } else if (wonLeg) {
+      // At least one leg won
+      pairStatus = 'won';
+      // Net = winning payout + returned stakes - total invested
+      const returnedAmount = (returnedA ? stakeA : 0) + (returnedB ? stakeB : 0);
+      netResult = Number(wonLeg.payout) + returnedAmount - totalStake;
+    } else {
+      // Both legs lost (or one lost, one returned)
+      pairStatus = 'lost';
+      // Net = returned stakes - total invested
+      const returnedAmount = (returnedA ? stakeA : 0) + (returnedB ? stakeB : 0);
+      netResult = returnedAmount - totalStake;
+    }
+    
+    return {
+      pairId: betA.pairId,
+      status: pairStatus,
+      totalStake,
+      netResult,
+      gameDate: betA.gameDate,
+      incomplete: false
+    };
+  }).filter(Boolean) as Array<{
+    pairId: string;
+    status: 'pending' | 'won' | 'lost' | 'returned';
+    totalStake: number;
+    netResult: number;
+    gameDate: Date;
+    incomplete: boolean;
+  }>;
+
+  // Calculate statistics based on pairs
+  const incompletePairs = pairStats.filter(pair => pair.incomplete).length;
+  const completePairs = pairStats.filter(pair => !pair.incomplete);
+  
   const stats = {
-    totalBets: bets.length,
-    pendingBets: bets.filter(bet => bet.status === 'pending').length,
-    wonBets: bets.filter(bet => bet.status === 'won').length,
-    lostBets: bets.filter(bet => bet.status === 'lost').length,
-    totalStaked: bets.reduce((acc, bet) => acc + Number(bet.stake), 0),
-    totalProfit: bets
-      .filter(bet => bet.status === 'won')
-      .reduce((acc, bet) => acc + (Number(bet.payout) - Number(bet.stake)), 0),
-    totalLoss: bets
-      .filter(bet => bet.status === 'lost')
-      .reduce((acc, bet) => acc + Number(bet.stake), 0)
+    totalPairs: pairStats.length,
+    completePairs: completePairs.length,
+    incompletePairs,
+    totalBets: bets.length, // Keep individual count for reference
+    pendingPairs: pairStats.filter(pair => pair.status === 'pending').length,
+    wonPairs: pairStats.filter(pair => pair.status === 'won').length,
+    lostPairs: pairStats.filter(pair => pair.status === 'lost').length,
+    returnedPairs: pairStats.filter(pair => pair.status === 'returned').length,
+    totalStaked: pairStats.reduce((acc, pair) => acc + pair.totalStake, 0),
+    totalProfit: pairStats
+      .filter(pair => pair.status === 'won')
+      .reduce((acc, pair) => acc + pair.netResult, 0),
+    totalLoss: Math.abs(pairStats
+      .filter(pair => pair.status === 'lost')
+      .reduce((acc, pair) => acc + pair.netResult, 0))
   };
 
   const netProfit = stats.totalProfit - stats.totalLoss;
-  const winRate = stats.totalBets > 0 ? ((stats.wonBets / (stats.wonBets + stats.lostBets)) * 100) : 0;
+  const completedPairs = stats.wonPairs + stats.lostPairs;
+  const winRate = completedPairs > 0 ? ((stats.wonPairs / completedPairs) * 100) : 0;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -87,15 +179,18 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total de Apostas</CardTitle>
+            <CardTitle className="text-sm font-medium">Pares de Apostas</CardTitle>
             <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-total-bets">
-              {stats.totalBets}
+            <div className="text-2xl font-bold" data-testid="text-total-pairs">
+              {stats.totalPairs}
             </div>
             <p className="text-xs text-muted-foreground">
-              {stats.pendingBets} pendentes
+              {stats.pendingPairs} pendentes
+              {stats.incompletePairs > 0 && (
+                <span> • {stats.incompletePairs} incompletos</span>
+              )}
             </p>
           </CardContent>
         </Card>
@@ -149,7 +244,7 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
               {winRate.toFixed(1)}%
             </div>
             <p className="text-xs text-muted-foreground">
-              {stats.wonBets} vitórias de {stats.wonBets + stats.lostBets} finalizadas
+              {stats.wonPairs} pares vencedores de {completedPairs} finalizados
             </p>
           </CardContent>
         </Card>
@@ -206,18 +301,18 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
           <CardContent className="p-12 text-center">
             <Target className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2" data-testid="text-no-bets">
-              {bets.length === 0 ? 'Nenhuma aposta cadastrada' : 'Nenhuma aposta encontrada'}
+              {bets.length === 0 ? 'Nenhum par de apostas cadastrado' : 'Nenhuma aposta encontrada'}
             </h3>
             <p className="text-muted-foreground mb-4">
               {bets.length === 0 
-                ? 'Comece adicionando sua primeira aposta com um comprovante'
+                ? 'Comece adicionando seu primeiro par de apostas com um comprovante'
                 : 'Tente ajustar os filtros para encontrar suas apostas'
               }
             </p>
             {bets.length === 0 && (
               <Button onClick={onAddBet} data-testid="button-add-first-bet">
                 <Plus className="w-4 h-4 mr-2" />
-                Adicionar primeira aposta
+                Adicionar primeiro par
               </Button>
             )}
           </CardContent>
@@ -246,7 +341,10 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
 
       {filteredBets.length > 0 && (
         <div className="text-center text-sm text-muted-foreground">
-          Mostrando {filteredBets.length} de {bets.length} apostas
+          Mostrando {filteredBets.length} apostas • {stats.completePairs} pares completos
+          {stats.incompletePairs > 0 && (
+            <span> • {stats.incompletePairs} pares incompletos</span>
+          )}
         </div>
       )}
     </div>
