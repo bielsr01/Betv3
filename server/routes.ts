@@ -80,6 +80,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // OCR Analysis endpoint using Gemini Vision
+  app.post('/api/ocr/analyze', async (req, res) => {
+    try {
+      const { imageBase64 } = req.body;
+      
+      if (!imageBase64) {
+        return res.status(400).json({ error: 'Image data is required' });
+      }
+
+      // Import and use Gemini OCR function
+      const { analyzeSureBetImage } = await import('./gemini-ocr');
+      const result = await analyzeSureBetImage(imageBase64);
+      
+      res.json(result);
+    } catch (error) {
+      console.error('OCR analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image with AI' });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
