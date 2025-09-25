@@ -9,17 +9,35 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+export const accountHolders = pgTable("account_holders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  cpf: text("cpf"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const bettingHouses = pgTable("betting_houses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  email: text("email"),
+  password: text("password"),
+  accountHolderId: varchar("account_holder_id").references(() => accountHolders.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 export const bets = pgTable("bets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  bettingHouse: text("betting_house").notNull(),
   teamA: text("team_a").notNull(), // First team
   teamB: text("team_b").notNull(), // Second team
   betType: text("bet_type").notNull(),
-  selectedSide: text("selected_side", { enum: ["A", "B"] }).notNull(), // Which side was bet on (A = teamA, B = teamB)
+  bettingHouseId: varchar("betting_house_id").references(() => bettingHouses.id), // Reference to betting house
   odds: decimal("odds", { precision: 10, scale: 2 }).notNull(),
   stake: decimal("stake", { precision: 10, scale: 2 }).notNull(),
   payout: decimal("payout", { precision: 10, scale: 2 }).notNull(),
-  gameDate: timestamp("game_date").notNull().default(sql`now()`),
+  gameDate: text("game_date").notNull(), // DD-MM-YYYY format
+  gameTime: text("game_time").notNull(), // HH:MM format
+  sport: text("sport").notNull(),
+  league: text("league").notNull(),
   status: text("status", { enum: ["pending", "won", "lost", "returned"] }).notNull().default("pending"),
   isVerified: boolean("is_verified").notNull().default(false),
   pairId: varchar("pair_id").notNull(), // Always paired - links two opposing bets
@@ -34,6 +52,16 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
 });
 
+export const insertAccountHolderSchema = createInsertSchema(accountHolders).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertBettingHouseSchema = createInsertSchema(bettingHouses).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertBetSchema = createInsertSchema(bets).omit({
   id: true,
   createdAt: true,
@@ -41,6 +69,10 @@ export const insertBetSchema = createInsertSchema(bets).omit({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type InsertAccountHolder = z.infer<typeof insertAccountHolderSchema>;
+export type AccountHolder = typeof accountHolders.$inferSelect;
+export type InsertBettingHouse = z.infer<typeof insertBettingHouseSchema>;
+export type BettingHouse = typeof bettingHouses.$inferSelect;
 export type InsertBet = z.infer<typeof insertBetSchema>;
 export type Bet = typeof bets.$inferSelect;
 
@@ -50,10 +82,8 @@ export const singleBetOCRSchema = z.object({
   teamA: z.string().min(1, "Time A é obrigatório"),
   teamB: z.string().min(1, "Time B é obrigatório"),
   betType: z.string().min(1, "Tipo de aposta é obrigatório"),
-  selectedSide: z.enum(["A", "B"], { errorMap: () => ({ message: "Lado selecionado deve ser A ou B" }) }),
   odds: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Odd deve ser um número válido"),
   stake: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Valor da aposta deve ser um número válido"),
-  payout: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Retorno deve ser um número válido"),
   profit: z.string().refine((val) => !isNaN(Number(val)), "Lucro deve ser um número válido"),
 });
 
@@ -61,13 +91,11 @@ export const singleBetOCRSchema = z.object({
 export const ocrDataSchema = z.object({
   betA: singleBetOCRSchema,
   betB: singleBetOCRSchema,
-  gameDate: z.date(), // ISO date for calendar component
-  gameDateFormatted: z.string().optional(), // DD-MM-YYYY format for display
-  gameTime: z.string().optional(),
-  gameDateTime: z.string().optional(), // Combined DD-MM-YYYY HH:MM format
+  gameDate: z.string(), // DD-MM-YYYY format
+  gameTime: z.string().optional(), // HH:MM format
   sport: z.string().min(1, "Esporte é obrigatório"),
   league: z.string().min(1, "Liga é obrigatória"),
-  totalProfitPercentage: z.string().refine((val) => !isNaN(Number(val)), "Porcentagem de lucro total deve ser um número válido"),
+  totalProfitPercentage: z.string().refine((val) => !isNaN(parseFloat(val.replace('%', ''))), "Porcentagem de lucro total deve ser um número válido"),
 }).refine(
   (data) => {
     // Ensure teams are consistent across both bets (normalized comparison)
@@ -78,15 +106,6 @@ export const ocrDataSchema = z.object({
   {
     message: "Times devem ser consistentes entre as duas apostas",
     path: ["betB", "teamA"],
-  }
-).refine(
-  (data) => {
-    // Ensure bets are on opposite sides
-    return data.betA.selectedSide !== data.betB.selectedSide;
-  },
-  {
-    message: "As apostas devem ser em lados opostos",
-    path: ["betB", "selectedSide"],
   }
 );
 
