@@ -335,13 +335,13 @@ export default function OCRVerification({
                         data-testid="button-game-date"
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.gameDate ? format(formData.gameDate, 'PPP', { locale: ptBR }) : 'Selecione a data'}
+                        {formData.gameDate ? format(new Date(formData.gameDate), 'PPP', { locale: ptBR }) : 'Selecione a data'}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        selected={formData.gameDate}
+                        selected={formData.gameDate ? new Date(formData.gameDate) : undefined}
                         onSelect={(date) => date && updateGameField('gameDate', date)}
                         initialFocus
                       />
