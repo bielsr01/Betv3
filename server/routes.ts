@@ -100,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Raw endpoint - returns unprocessed OCR.space result
+  // OCR Raw endpoint - returns unprocessed Mistral OCR text
   app.post('/api/ocr/raw', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -109,37 +109,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Image data is required' });
       }
 
-      const OCR_SPACE_API_KEY = process.env.OCR_SPACE_API_KEY;
-      if (!OCR_SPACE_API_KEY) {
-        return res.status(500).json({ error: 'OCR.space API key not configured' });
+      const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
+      if (!MISTRAL_API_KEY) {
+        return res.status(500).json({ error: 'Mistral API key not configured' });
       }
 
-      // Call OCR.space API directly
-      const formData = new FormData();
-      formData.append('base64Image', `data:image/png;base64,${imageBase64}`);
-      formData.append('apikey', OCR_SPACE_API_KEY);
-      formData.append('language', 'por');
-      formData.append('isOverlayRequired', 'true');
-      formData.append('OCREngine', '2');
+      // Clean base64 string
+      const cleanBase64 = imageBase64.includes('base64,') 
+        ? imageBase64.split('base64,')[1] 
+        : imageBase64;
 
-      const response = await fetch('https://api.ocr.space/parse/image', {
+      // Call Mistral OCR API directly for raw text
+      const payload = {
+        model: "mistral-ocr-latest",
+        document: {
+          type: "image_url",
+          image_url: `data:image/png;base64,${cleanBase64}`
+        },
+        include_image_base64: false
+      };
+
+      const response = await fetch('https://api.mistral.ai/v1/ocr', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${MISTRAL_API_KEY}`
+        },
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        throw new Error(`OCR.space API error: ${response.status}`);
+        throw new Error(`Mistral OCR API error: ${response.status}`);
       }
 
-      const rawResult = await response.text();
+      const ocrResult = await response.json();
       
-      // Return raw response as plain text
-      res.set('Content-Type', 'text/plain');
-      res.send(rawResult);
+      // Extract raw text without formatting
+      let rawText = '';
+      if (ocrResult.pages && ocrResult.pages.length > 0) {
+        // Get markdown content and convert to plain text
+        const markdown = ocrResult.pages[0].markdown || '';
+        
+        // Remove markdown formatting to get clean text
+        rawText = markdown
+          .replace(/#{1,6}\s+/g, '') // Remove headers
+          .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
+          .replace(/\*([^*]+)\*/g, '$1') // Remove italic
+          .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Remove links
+          .replace(/\|/g, ' ') // Remove table separators
+          .replace(/---+/g, '') // Remove horizontal rules
+          .replace(/^\s*[\-\*\+]\s+/gm, '') // Remove list bullets
+          .replace(/^\s*\d+\.\s+/gm, '') // Remove numbered lists
+          .replace(/\n{3,}/g, '\n\n') // Normalize line breaks
+          .trim();
+      }
+      
+      // If no text extracted, show raw response
+      if (!rawText) {
+        rawText = `Nenhum texto extraído.\n\nResposta completa da API:\n${JSON.stringify(ocrResult, null, 2)}`;
+      }
+      
+      // Return clean text as plain text
+      res.set('Content-Type', 'text/plain; charset=utf-8');
+      res.send(rawText);
       
     } catch (error) {
-      console.error('OCR.space raw analysis error:', error);
-      res.status(500).json({ error: 'Failed to get raw OCR.space result' });
+      console.error('Mistral OCR raw analysis error:', error);
+      res.status(500).json({ error: 'Failed to get raw Mistral OCR result' });
     }
   });
 
