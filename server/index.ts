@@ -3,9 +3,9 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-// Optimized payload limit for compressed images
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ limit: '5mb', extended: true }));
+// Increase payload limit for image uploads
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use((req, res, next) => {
   const start = Date.now();

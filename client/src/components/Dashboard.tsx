@@ -23,10 +23,8 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
   const filteredBets = bets
     .filter(bet => {
       const matchesStatus = statusFilter === 'all' || bet.status === statusFilter;
-      const bettingHouse = bet.bettingHouse || '';
-      const betType = bet.betType || '';
-      const matchesSearch = bettingHouse.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           betType.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = bet.bettingHouse.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           bet.betType.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesStatus && matchesSearch;
     })
     .sort((a, b) => {
@@ -53,7 +51,7 @@ export default function Dashboard({ bets, onResolveBet, onAddBet }: DashboardPro
 
   const pairStats = Object.values(pairs).map(pairBets => {
     // Sort bets by position to ensure consistent ordering
-    const sortedBets = pairBets.sort((a, b) => (a.betPosition || '').localeCompare(b.betPosition || ''));
+    const sortedBets = pairBets.sort((a, b) => a.betPosition.localeCompare(b.betPosition));
     const betA = sortedBets.find(bet => bet.betPosition === 'A');
     const betB = sortedBets.find(bet => bet.betPosition === 'B');
     

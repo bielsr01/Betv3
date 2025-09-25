@@ -1,10 +1,9 @@
-modules = ["nodejs-20", "web", "python-3.11"]
+modules = ["nodejs-20", "web"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["cairo", "ffmpeg-full", "fontconfig", "freetype", "gcc", "gcc-unwrapped", "geos", "ghostscript", "glib", "glibc", "glibcLocales", "gobject-introspection", "gtk3", "hdf5", "lcms2", "libGL", "libGLU", "libimagequant", "libjpeg", "libjpeg_turbo", "libpng", "libtiff", "libwebp", "libxcrypt", "libyaml", "mesa", "opencv", "openjpeg", "openssl", "pango", "pkg-config", "python3", "python312Packages.numpy", "python312Packages.opencv4", "python312Packages.pillow", "qhull", "tcl", "tesseract", "tk", "which", "xsimd", "zlib"]
 
 [deployment]
 deploymentTarget = "autoscale"
@@ -16,7 +15,7 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 35015
+localPort = 39281
 externalPort = 3001
 
 [[ports]]

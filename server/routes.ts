@@ -49,9 +49,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/bets/:id/status", async (req, res) => {
+  app.put("/api/bets/:id/status", async (req, res) => {
     try {
       const { status } = req.body;
+      if (!['pending', 'won', 'lost', 'returned'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+      
       const bet = await storage.updateBetStatus(req.params.id, status);
       if (!bet) {
         return res.status(404).json({ error: 'Bet not found' });
@@ -76,8 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // PYTORCH OCR ENDPOINT: AI-powered OCR with PyTorch backend
-  // User explicitly requested PyTorch OCR over all other alternatives
+  // OCR Analysis endpoint using Gemini Vision
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -85,110 +88,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!imageBase64) {
         return res.status(400).json({ error: 'Image data is required' });
       }
+
+      // Import and use Gemini OCR function
+      const { analyzeSureBetImage } = await import('./gemini-ocr');
+      const result = await analyzeSureBetImage(imageBase64);
       
-      // Validate image size (prevent oversized uploads)
-      if (imageBase64.length > 4 * 1024 * 1024) { // ~3MB base64 limit
-        return res.status(413).json({ error: 'Image too large. Please use a smaller image.' });
-      }
-
-      const startTime = Date.now();
-      
-      try {
-        // GEMINI REAL OCR SYSTEM - NO SIMULATIONS, REAL DATA ONLY
-        console.log('🤖 Starting Gemini REAL OCR system (NO simulations)...');
-        
-        const { spawn } = await import('child_process');
-        const doctrResult = await new Promise((resolve, reject) => {
-          const child = spawn('python3', ['server/gemini_ocr_real.py'], {
-            stdio: ['pipe', 'pipe', 'pipe']
-          });
-          
-          // Timeout after 60 seconds
-          const timeout = setTimeout(() => {
-            child.kill('SIGTERM');
-            reject(new Error('PyTorch OCR timeout after 60 seconds'));
-          }, 60000);
-          
-          let stdout = '';
-          let stderr = '';
-          
-          child.stdout.on('data', (data) => stdout += data);
-          child.stderr.on('data', (data) => stderr += data);
-          
-          child.on('close', (code) => {
-            clearTimeout(timeout);
-            
-            // PRIORITIZE STDOUT PARSING OVER EXIT CODE
-            // Python script outputs valid JSON to stdout even when dependencies have warnings
-            try {
-              if (stdout.trim()) {
-                const result = JSON.parse(stdout.trim());
-                // If we got valid JSON, that's success regardless of exit code
-                console.log(`📊 Got valid JSON from PyTorch OCR (exit code ${code})`);
-                resolve(result);
-                return;
-              }
-            } catch (parseError) {
-              console.log(`❌ JSON parse failed: ${parseError}. Stdout: ${stdout.substring(0, 100)}`);
-            }
-            
-            // Only reject if no valid JSON was found AND exit code indicates failure
-            reject(new Error(`PyTorch OCR failed - no valid output. Code: ${code}, Stderr: ${stderr.substring(0, 300)}`));
-          });
-          
-          child.on('error', (err: any) => {
-            clearTimeout(timeout);
-            reject(err);
-          });
-          
-          // Send JSON data to Python script
-          child.stdin.write(JSON.stringify({ 
-            imageBase64
-          }));
-          child.stdin.end();
-        });
-
-        const processingTime = Date.now() - startTime;
-        console.log(`✅ PyTorch OCR completed in ${processingTime}ms`);
-
-        if ((doctrResult as any).success) {
-          console.log('🎉 SUCCESS: PyTorch OCR extraction succeeded');
-          console.log('DEBUG: PYTORCH_OCR_SUCCESS', JSON.stringify({
-            method: (doctrResult as any).method,
-            betA_house: (doctrResult as any).betA?.bettingHouse,
-            betB_house: (doctrResult as any).betB?.bettingHouse,
-            profit: (doctrResult as any).totalProfitPercentage,
-            processing_time_ms: processingTime,
-            timestamp: new Date().toISOString()
-          }));
-        } else {
-          console.log('⚠️ PyTorch OCR could not extract data (this is normal for unclear images)');
-          console.log('DEBUG: PYTORCH_OCR_NO_DATA', JSON.stringify({
-            method: (doctrResult as any).method,
-            error: (doctrResult as any).error,
-            processing_time_ms: processingTime,
-            timestamp: new Date().toISOString()
-          }));
-        }
-        
-        // Always return the PyTorch OCR result, whether success or failure
-        res.json(doctrResult as any);
-        return;
-        
-      } catch (error: any) {
-        console.error('PyTorch OCR error:', error);
-        res.status(500).json({ 
-          error: 'PyTorch OCR failed', 
-          details: error.message 
-        });
-      }
-    } catch (outerError: any) {
-      console.error('OCR endpoint error:', outerError);
-      res.status(500).json({ error: 'Failed to process OCR request' });
+      res.json(result);
+    } catch (error) {
+      console.error('OCR analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image with AI' });
     }
   });
-  
-  // Server startup
-  const server = createServer(app);
-  return server;
+
+  const httpServer = createServer(app);
+
+  return httpServer;
 }
