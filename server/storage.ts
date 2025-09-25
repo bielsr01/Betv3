@@ -1,4 +1,6 @@
-import { type User, type InsertUser, type Bet, type InsertBet } from "@shared/schema";
+import { type User, type InsertUser, type Bet, type InsertBet, users, bets } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 // modify the interface with any CRUD methods
@@ -16,6 +18,62 @@ export interface IStorage {
   createBet(bet: InsertBet): Promise<Bet>;
   updateBetStatus(id: string, status: 'pending' | 'won' | 'lost' | 'returned'): Promise<Bet | undefined>;
   deleteBet(id: string): Promise<boolean>;
+}
+
+export class DatabaseStorage implements IStorage {
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  // Bet operations
+  async getAllBets(): Promise<Bet[]> {
+    return await db.select().from(bets).orderBy(desc(bets.createdAt));
+  }
+
+  async getBetById(id: string): Promise<Bet | undefined> {
+    const [bet] = await db.select().from(bets).where(eq(bets.id, id));
+    return bet || undefined;
+  }
+
+  async getBetsByPairId(pairId: string): Promise<Bet[]> {
+    return await db.select().from(bets).where(eq(bets.pairId, pairId));
+  }
+
+  async createBet(insertBet: InsertBet): Promise<Bet> {
+    const [bet] = await db
+      .insert(bets)
+      .values(insertBet)
+      .returning();
+    return bet;
+  }
+
+  async updateBetStatus(id: string, status: 'pending' | 'won' | 'lost' | 'returned'): Promise<Bet | undefined> {
+    const [bet] = await db
+      .update(bets)
+      .set({ status })
+      .where(eq(bets.id, id))
+      .returning();
+    return bet || undefined;
+  }
+
+  async deleteBet(id: string): Promise<boolean> {
+    const result = await db.delete(bets).where(eq(bets.id, id));
+    return (result as any).rowsAffected > 0;
+  }
 }
 
 export class MemStorage implements IStorage {
@@ -96,4 +154,4 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
