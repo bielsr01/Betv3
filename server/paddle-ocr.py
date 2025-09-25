@@ -291,8 +291,17 @@ class BettingSlipOCR:
         if 'Data e Horário do Jogo' in general_data:
             date_time = general_data['Data e Horário do Jogo'].split(' ')
             if len(date_time) >= 2:
-                result['gameDate'] = date_time[0]
-                result['gameTime'] = date_time[1]
+                # Convert date from ISO format (yyyy-mm-dd) to Brazilian format (dd/mm/yyyy)
+                try:
+                    iso_date = date_time[0]
+                    parsed_date = datetime.strptime(iso_date, '%Y-%m-%d')
+                    brazilian_date = parsed_date.strftime('%d/%m/%Y')
+                    result['gameDate'] = brazilian_date
+                    result['gameTime'] = date_time[1]
+                except ValueError:
+                    # If conversion fails, keep original date
+                    result['gameDate'] = date_time[0]
+                    result['gameTime'] = date_time[1]
         if 'Lucro Total em %' in general_data:
             result['totalProfitPercentage'] = general_data['Lucro Total em %']
         
@@ -466,13 +475,14 @@ class BettingSlipOCR:
                     date_str = match.group(1)
                     time_str = match.group(2)
                     
-                    # Parse date without any automatic corrections
+                    # Parse date and convert to Brazilian format (dd/mm/yyyy)
                     try:
-                        # Just validate the date format, but keep the original date
-                        datetime.strptime(date_str, '%Y-%m-%d')
+                        # Parse the ISO date (yyyy-mm-dd) and convert to Brazilian format
+                        parsed_date = datetime.strptime(date_str, '%Y-%m-%d')
+                        brazilian_date = parsed_date.strftime('%d/%m/%Y')
                         
                         return {
-                            'date': date_str,
+                            'date': brazilian_date,
                             'time': time_str
                         }
                     except ValueError:
@@ -632,7 +642,7 @@ class BettingSlipOCR:
                 'stake': '0',
                 'profit': '0'
             },
-            'gameDate': '2025-01-01',
+            'gameDate': '01/01/2025',
             'gameTime': '00:00',
             'sport': 'Futebol',
             'league': '',
