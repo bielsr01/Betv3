@@ -15,11 +15,16 @@ export const bets = pgTable("bets", {
   teamA: text("team_a").notNull(), // First team
   teamB: text("team_b").notNull(), // Second team
   betType: text("bet_type").notNull(),
+  betTypeExact: text("bet_type_exact"), // Exact text from image (e.g., "1 / DNB 1º período")
   selectedSide: text("selected_side", { enum: ["A", "B"] }).notNull(), // Which side was bet on (A = teamA, B = teamB)
   odds: decimal("odds", { precision: 10, scale: 2 }).notNull(),
   stake: decimal("stake", { precision: 10, scale: 2 }).notNull(),
   payout: decimal("payout", { precision: 10, scale: 2 }).notNull(),
   gameDate: timestamp("game_date").notNull().default(sql`now()`),
+  gameTime: text("game_time"), // Time as shown in image (e.g., "2025-09-27 20:00 -03:00")
+  sport: text("sport"), // Sport type (e.g., "Futebol americano")
+  league: text("league"), // League/competition (e.g., "USA - College")
+  absoluteProfit: text("absolute_profit"), // Profit in currency (e.g., "7.66")
   status: text("status", { enum: ["pending", "won", "lost", "returned"] }).notNull().default("pending"),
   isVerified: boolean("is_verified").notNull().default(false),
   pairId: varchar("pair_id").notNull(), // Always paired - links two opposing bets
@@ -50,11 +55,13 @@ export const singleBetOCRSchema = z.object({
   teamA: z.string().min(1, "Time A é obrigatório"),
   teamB: z.string().min(1, "Time B é obrigatório"),
   betType: z.string().min(1, "Tipo de aposta é obrigatório"),
+  betTypeExact: z.string().optional(), // Exact text from image
   selectedSide: z.enum(["A", "B"], { errorMap: () => ({ message: "Lado selecionado deve ser A ou B" }) }),
   odds: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Odd deve ser um número válido"),
   stake: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Valor da aposta deve ser um número válido"),
   payout: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Retorno deve ser um número válido"),
   profit: z.string().refine((val) => !isNaN(Number(val)), "Lucro deve ser um número válido"),
+  absoluteProfit: z.string().optional(), // Profit in currency (e.g., "7.66")
 });
 
 // OCR extracted data for paired bets (two opposing bets)
