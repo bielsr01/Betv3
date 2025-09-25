@@ -143,7 +143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
       
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',

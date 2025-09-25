@@ -71,7 +71,7 @@ class PerplexityOCR:
             }
             
             print("Sending request to Perplexity AI...", file=sys.stderr)
-            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=5)
+            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=12)
             response.raise_for_status()
             
             result = response.json()
@@ -162,7 +162,7 @@ Extract real values from the image. If some data is not visible, use reasonable 
             }
             
             print("Sending structured extraction request to Perplexity AI...", file=sys.stderr)
-            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=5)
+            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=12)
             response.raise_for_status()
             
             result = response.json()
