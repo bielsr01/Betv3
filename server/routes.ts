@@ -127,7 +127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             content: [
               {
                 type: "text",
-                text: "Extract all visible text from this image exactly as it appears. Do not interpret, translate, or format the text. Return only the raw text content with line breaks preserved."
+                text: "Extract all visible text from this image exactly as it appears. Return only the raw text content."
               },
               {
                 type: "image_url",
@@ -138,8 +138,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ]
           }
         ],
-        max_tokens: 2000,
-        temperature: 0.1
+        max_tokens: 1200,
+        temperature: 0.2
       };
 
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
