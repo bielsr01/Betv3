@@ -105,47 +105,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const processingTime = Date.now() - startTime;
         console.log(`Pure text extraction completed in ${processingTime}ms`);
         
-        // Extract all text from blocks for user verification
-        const allText = blocksResult.blocks ? 
-          blocksResult.blocks.map(block => block.text).filter(text => text.trim()).join(' ') : '';
+        // Extract all text from lines (correct structure)
+        const allText = blocksResult.lines ? 
+          blocksResult.lines.map(line => line.full_text || '').filter(text => text.trim()).join(' ') : '';
         
-        // Create simple result for user verification
+        // Extract betting data automatically from text
+        const betData = extractBettingData(allText, blocksResult.lines || []);
+        
+        // Create result with automatically filled fields
         const simpleResult = {
           success: true,
-          method: 'pure_text_extraction',
+          method: 'automatic_extraction',
           raw_text: allText,
-          text_blocks: blocksResult.blocks || [],
-          total_blocks: blocksResult.blocks ? blocksResult.blocks.length : 0,
+          text_blocks: blocksResult.lines || [],
+          total_blocks: blocksResult.total_blocks || 0,
           
-          // Provide empty template for user to fill manually
-          betA: {
-            bettingHouse: '',
-            teamA: '',
-            teamB: '',
-            betType: '',
-            odds: '',
-            stake: '',
-            payout: ''
-          },
-          betB: {
-            bettingHouse: '',
-            teamA: '',
-            teamB: '',
-            betType: '',
-            odds: '',
-            stake: '',
-            payout: ''
-          },
-          gameDate: '',
-          gameTime: '',
-          sport: '',
-          league: ''
+          // Automatically filled fields from extracted data
+          betA: betData.betA,
+          betB: betData.betB,
+          gameDate: betData.gameDate,
+          gameTime: betData.gameTime,
+          sport: betData.sport,
+          league: betData.league,
+          totalProfitPercentage: betData.totalProfitPercentage
         };
         
-        console.log('DEBUG: PURE_EXTRACTION_SUCCESS', JSON.stringify({
-          method: 'pure_text_extraction',
+        // Add automatic extraction function before the route handler
+        function extractBettingData(fullText: string, lines: any[]) {
+          let betA = { bettingHouse: '', teamA: '', teamB: '', betType: '', odds: '', stake: '', payout: '', selectedSide: 'A' };
+          let betB = { bettingHouse: '', teamA: '', teamB: '', betType: '', odds: '', stake: '', payout: '', selectedSide: 'B' };
+          let gameDate = '', gameTime = '', sport = 'Futebol', league = '', totalProfitPercentage = '';
+          
+          // Look for betting houses and data in lines
+          lines.forEach(line => {
+            const text = line.full_text || '';
+            
+            // Extract Pinnacle data
+            if (text.includes('Pinnacle')) {
+              const pinnacleMatch = text.match(/Pinnacle.*?([\d.]+).*?([\d.]+)/);
+              if (pinnacleMatch) {
+                betB.bettingHouse = 'Pinnacle';
+                betB.odds = pinnacleMatch[1];
+                betB.stake = pinnacleMatch[2];
+                
+                // Extract bet type
+                if (text.includes('H2(0)')) betB.betType = 'H2(0) 1º período';
+                else if (text.includes('H1')) betB.betType = 'H1';
+                else if (text.includes('DNB')) betB.betType = 'DNB';
+              }
+            }
+            
+            // Extract KTO data
+            if (text.includes('KTO') || text.includes('kto')) {
+              const ktoMatch = text.match(/([\d.]+).*?([\d.]+)/);
+              if (ktoMatch) {
+                betA.bettingHouse = 'KTO';
+                betA.odds = ktoMatch[1];
+                betA.stake = ktoMatch[2];
+                
+                // Extract bet type
+                if (text.includes('1/')) betA.betType = '1/ DNB 1º período';
+                else if (text.includes('DNB')) betA.betType = 'DNB';
+              }
+            }
+            
+            // Extract teams
+            if (text.includes('—') || text.includes('-')) {
+              const teamMatch = text.match(/([\w\s-]+)\s*[—-]\s*([\w\s-]+)/);
+              if (teamMatch) {
+                betA.teamA = teamMatch[1].trim();
+                betA.teamB = teamMatch[2].trim();
+                betB.teamA = teamMatch[1].trim();
+                betB.teamB = teamMatch[2].trim();
+              }
+            }
+            
+            // Extract total profit
+            if (text.includes('%') || text.includes('total')) {
+              const profitMatch = text.match(/([\d.]+)%/);
+              if (profitMatch) {
+                totalProfitPercentage = profitMatch[1];
+              }
+            }
+            
+            // Extract date
+            if (text.match(/\d{4}-\d{2}-\d{2}/) || text.match(/\d{2}\/\d{2}/)) {
+              const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})|(\d{2}\/\d{2}\/\d{4})/);
+              if (dateMatch) {
+                gameDate = dateMatch[0];
+              }
+            }
+          });
+          
+          // Calculate payouts if missing
+          if (betA.odds && betA.stake && !betA.payout) {
+            betA.payout = (parseFloat(betA.odds) * parseFloat(betA.stake)).toFixed(2);
+          }
+          if (betB.odds && betB.stake && !betB.payout) {
+            betB.payout = (parseFloat(betB.odds) * parseFloat(betB.stake)).toFixed(2);
+          }
+          
+          // Set default date if none found
+          if (!gameDate) {
+            const today = new Date();
+            gameDate = today.toISOString().split('T')[0];
+          }
+          
+          return { betA, betB, gameDate, gameTime, sport, league, totalProfitPercentage };
+        }
+        
+        console.log('DEBUG: AUTOMATIC_EXTRACTION_SUCCESS', JSON.stringify({
+          method: 'automatic_extraction',
           total_blocks: simpleResult.total_blocks,
           text_preview: allText.substring(0, 150),
+          betA_house: simpleResult.betA.bettingHouse,
+          betB_house: simpleResult.betB.bettingHouse,
+          betA_odds: simpleResult.betA.odds,
+          betB_odds: simpleResult.betB.odds,
           processing_time_ms: processingTime,
           timestamp: new Date().toISOString()
         }));
