@@ -296,25 +296,14 @@ class BettingSlipOCR:
         # 1. Extract teams and percentage from actual OCR data
         full_text = ' '.join(all_text_lines)
         
-        # Extract teams - more flexible pattern
-        team_patterns = [
-            # Pattern for "Atlantic Owls da Florida - Memphis"  
-            r'([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*(?:\s+da\s+[A-Za-zÀ-ÿ]+)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)',
-            # Pattern for "Lille - Lyon"
-            r'([A-Za-zÀ-ÿ]{3,})\s*-\s*([A-Za-zÀ-ÿ]{3,})'
-        ]
-        
-        for pattern in team_patterns:
-            team_match = re.search(pattern, full_text)
-            if team_match and not any(word in team_match.group(0) for word in ['SureBet', 'Google', 'Chrome', 'BR']):
-                teamA = team_match.group(1).strip()
-                teamB = team_match.group(2).strip()
-                result['betA']['teamA'] = teamA
-                result['betA']['teamB'] = teamB
-                result['betB']['teamA'] = teamA
-                result['betB']['teamB'] = teamB
-                print(f"Teams extracted: {teamA} vs {teamB}", file=sys.stderr)
-                break
+        # Extract teams using robust patterns that handle complex team names
+        team_extracted = self._extract_team_names(all_text_lines)
+        if team_extracted:
+            result['betA']['teamA'] = team_extracted['teamA']
+            result['betA']['teamB'] = team_extracted['teamB']
+            result['betB']['teamA'] = team_extracted['teamA']
+            result['betB']['teamB'] = team_extracted['teamB']
+            print(f"Teams extracted: {team_extracted['teamA']} vs {team_extracted['teamB']}", file=sys.stderr)
         
         # Extract percentage (2.50%)
         perc_match = re.search(r'(\d+\.\d+)\s*%(?!\s*ROI)', full_text)
@@ -338,19 +327,11 @@ class BettingSlipOCR:
         elif 'basketball' in full_text.lower() or 'basquete' in full_text.lower():
             result['sport'] = 'Basketball'
         
-        # Then extract league information
-        league_patterns = [
-            r'(USA)\s*-\s*(College)',  # USA - College
-            r'(França)\s*-\s*(Ligue\s*\d+)',  # França - Ligue 1
-            r'([A-Za-zÀ-ÿ]+)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+\d+)?)'  # General pattern
-        ]
-        
-        for pattern in league_patterns:
-            league_match = re.search(pattern, full_text)
-            if league_match and not any(word in league_match.group(0) for word in ['SureBet', 'Google', 'Chrome']):
-                result['league'] = f"{league_match.group(1)} - {league_match.group(2)}"
-                print(f"League extracted: {result['league']}", file=sys.stderr)
-                break
+        # Extract league information using line-by-line analysis
+        league_extracted = self._extract_league_info(all_text_lines)
+        if league_extracted:
+            result['league'] = league_extracted
+            print(f"League extracted: {league_extracted}", file=sys.stderr)
         
         # 4. Extract betting data using both text and table structure
         betting_data = self._extract_betting_data(text_data, table_data)
@@ -361,6 +342,61 @@ class BettingSlipOCR:
                 result['betB'].update(betting_data['betB'])
         
         return result
+
+    def _extract_team_names(self, text_lines: List[str]) -> Optional[Dict[str, str]]:
+        """Extract team names using robust patterns for complex team names"""
+        for line in text_lines:
+            line_clean = line.strip()
+            
+            # Skip obvious non-team lines
+            if any(skip in line_clean.lower() for skip in ['surebet', 'google', 'chrome', 'evento', 'futebol', 'apostas', 'roi', 'chance', 'lucro', 'total:', 'mostrar', 'use', 'arredondar', 'levar']):
+                continue
+            
+            # Enhanced patterns for team name extraction
+            team_patterns = [
+                # Pattern for complex teams like "Chelsea FC - Brighton & Hove Albion FC"
+                r'^([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion|FC|CF)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion|FC|CF)?)',
+                # Pattern for simpler teams like "Lille - Lyon"
+                r'^([A-Za-zÀ-ÿ]{3,}(?:\s+[A-Za-zÀ-ÿ]+)*)\s*-\s*([A-Za-zÀ-ÿ]{3,}(?:\s+[A-Za-zÀ-ÿ]+)*)',
+                # Pattern with percentage at end "TeamA - TeamB 1.59%"
+                r'^([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion)?)\s+[\d.]+\s*%'
+            ]
+            
+            for pattern in team_patterns:
+                match = re.search(pattern, line_clean, re.IGNORECASE)
+                if match:
+                    teamA = match.group(1).strip()
+                    teamB = match.group(2).strip()
+                    
+                    # Validate team names (avoid single letters, numbers, etc.)
+                    if len(teamA) >= 3 and len(teamB) >= 3 and teamA != teamB:
+                        return {
+                            'teamA': teamA,
+                            'teamB': teamB
+                        }
+        
+        return None
+
+    def _extract_league_info(self, text_lines: List[str]) -> Optional[str]:
+        """Extract league information from text lines"""
+        for line in text_lines:
+            line_clean = line.strip()
+            
+            # Look for sport/league pattern like "Futebol / Inglaterra - Premier League"
+            league_patterns = [
+                r'Futebol\s*/\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)',
+                r'([A-Za-zÀ-ÿ]+)\s*-\s*(Premier\s+League|Ligue\s+\d+|Championship|Serie\s+A|Bundesliga|La\s+Liga|College)',
+                r'([A-Za-zÀ-ÿ]+)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)'
+            ]
+            
+            for pattern in league_patterns:
+                match = re.search(pattern, line_clean, re.IGNORECASE)
+                if match and not any(skip in line_clean.lower() for skip in ['surebet', 'google', 'chrome', 'roi']):
+                    country = match.group(1).strip()
+                    league = match.group(2).strip()
+                    return f"{country} - {league}"
+        
+        return None
 
     def _extract_teams_and_percentage(self, lines: List[str]) -> Optional[Dict[str, str]]:
         """Extract team names and profit percentage"""
@@ -444,7 +480,7 @@ class BettingSlipOCR:
         return None
 
     def _extract_betting_data(self, text_data: List[Dict], table_data: List[Dict]) -> Optional[Dict]:
-        """Extract betting house data using structured approach with multi-line support"""
+        """Extract betting house data with enhanced parsing for specific bet types and support for special characters"""
         betting_houses = []
         
         # Group text by vertical position for table-like structure
@@ -452,80 +488,23 @@ class BettingSlipOCR:
         
         print(f"Grouped text into {len(grouped_text)} rows", file=sys.stderr)
         
-        # First pass: try single-row patterns
+        # Enhanced parsing for each row
         for row_index, row_texts in enumerate(grouped_text):
             row_text = ' '.join([item['text'] for item in row_texts])
             print(f"Row {row_index}: {row_text}", file=sys.stderr)
             
-            # Enhanced patterns for betting data - more flexible and accurate
-            betting_patterns = [
-                # Betnacional pattern: "Betnacional (BR) H1(+0.5) - escanteios 1.830 56.01 USD 2.50"
-                {
-                    'house': 'Betnacional',
-                    'pattern': r'betnacional.*?h1.*?escanteios.*?(\d+\.\d+).*?(\d+\.\d+).*?usd.*?(\d+\.\d+)',
-                    'bet_type': 'H1(+0.5) - escanteios'
-                },
-                # KTO pattern: "KTO (BR) 2 - escanteios 2.330 43.99 USD 2.50"
-                {
-                    'house': 'KTO',
-                    'pattern': r'kto.*?2.*?escanteios.*?(\d+\.\d+).*?(\d+\.\d+).*?usd.*?(\d+\.\d+)',
-                    'bet_type': '2 - escanteios'
-                },
-                # Betfast pattern: "Betfast Acima 19.5 2° o período 2.200 159 USD 7.66"
-                # Fixed: odds=2.200, stake=159, profit=7.66 (not threshold=19.5)
-                {
-                    'house': 'Betfast',
-                    'pattern': r'betfast\s+acima\s+[\d.]+.*?período\s+(\d+\.\d+).*?(\d+(?:\.\d+)?)\s+usd.*?(\d+\.\d+)',
-                    'bet_type': 'Acima'
-                },
-                # Blaze pattern: "Blaze (BR) Abaixo 19.5 2º o período 1.910 183.14 USD 7.66"  
-                # Fixed: odds=1.910, stake=183.14, profit=7.66 (not threshold=19.5)
-                {
-                    'house': 'Blaze',
-                    'pattern': r'blaze.*?abaixo\s+[\d.]+.*?período\s+(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
-                    'bet_type': 'Abaixo'
-                },
-                # Generic pattern for any betting house with (BR)
-                {
-                    'house': 'Generic',
-                    'pattern': r'(\w+)\s*\([^)]*BR[^)]*\).*?(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
-                    'bet_type': 'Aposta'
-                }
-            ]
+            # Skip non-betting rows
+            if not any(house in row_text.lower() for house in ['betnacional', 'kto', 'blaze', 'betfast', 'marjosports', '(br)']):
+                continue
             
-            for bet_pattern in betting_patterns:
-                match = re.search(bet_pattern['pattern'], row_text, re.IGNORECASE)
-                if match:
-                    groups = match.groups()
-                    print(f"Pattern matched for {bet_pattern['house']}: {groups}", file=sys.stderr)
-                    
-                    if len(groups) >= 3:
-                        if bet_pattern['house'] == 'Generic':
-                            # For generic pattern, extract house name from first group
-                            house_name = groups[0].capitalize()
-                            odds = groups[1]
-                            stake = groups[2]
-                            profit = groups[3] if len(groups) > 3 else groups[2]
-                        else:
-                            house_name = bet_pattern['house']
-                            odds = groups[0]
-                            stake = groups[1]
-                            profit = groups[2]
-                        
-                        betting_house = {
-                            'bettingHouse': house_name + ' (BR)',
-                            'betType': bet_pattern['bet_type'],
-                            'odds': odds,
-                            'stake': stake,
-                            'profit': profit
-                        }
-                        
-                        betting_houses.append(betting_house)
-                        print(f"Extracted betting house: {betting_house}", file=sys.stderr)
-                        break
+            # Extract betting house information with enhanced patterns
+            betting_info = self._parse_betting_row(row_text)
+            if betting_info:
+                betting_houses.append(betting_info)
+                print(f"Extracted betting house: {betting_info}", file=sys.stderr)
         
-        # Second pass: Handle multi-line betting data (like KTO split across rows)
-        if len(betting_houses) < 2:  # Only look for missing data if we don't have 2 betting houses
+        # Handle multi-line betting data if needed
+        if len(betting_houses) < 2:
             self._extract_multiline_betting_data(grouped_text, betting_houses)
         
         # Structure the betting data
@@ -537,6 +516,68 @@ class BettingSlipOCR:
                 result['betB'] = betting_houses[1]
             
             return result
+        
+        return None
+
+    def _parse_betting_row(self, row_text: str) -> Optional[Dict]:
+        """Parse a single betting row with enhanced support for various bet types and special characters"""
+        
+        # Normalize text for better matching (handle special characters)
+        normalized_text = row_text.replace('&amp;', '&').replace('·', '.').replace('º', '°')
+        
+        # Enhanced betting patterns for different types of bets
+        betting_patterns = [
+            # MarjoSports Total pattern: "MarjoSports (BR) Total 24 - cartões 2º o time 4.200 R 24.19 USD v 1.60"
+            {
+                'pattern': r'(marjosports).*?\(br\).*?(total\s+[\d.]+\s*[-–]\s*\w+).*?(\d+\.\d+).*?r?\s*(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
+                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
+            },
+            # Blaze Abaixo/Acima pattern: "Blaze (BR) Abaixo 3.5 - cartões 2º o time R 1.340 · 75.81 USD v 1.59"
+            {
+                'pattern': r'(blaze).*?\(br\).*?((?:abaixo|acima)\s+[\d.]+\s*[-–]\s*\w+).*?r?\s*(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
+                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
+            },
+            # Betnacional H1 pattern: "Betnacional (BR) H1(+0.5) - escanteios 1.830 56.01 USD 2.50"
+            {
+                'pattern': r'(betnacional).*?\(br\).*?(h1.*?escanteios).*?(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
+                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
+            },
+            # KTO pattern: "KTO (BR) 2 - escanteios 2.330 43.99 USD 2.50"
+            {
+                'pattern': r'(kto).*?\(br\).*?(\d+\s*[-–]\s*escanteios).*?(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
+                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
+            },
+            # Generic pattern with enhanced bet type extraction
+            {
+                'pattern': r'(\w+)\s*\(br\).*?(\w+(?:\s+[\d.]+)?(?:\s*[-–]\s*\w+)*).*?(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
+                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
+            }
+        ]
+        
+        for pattern_info in betting_patterns:
+            match = re.search(pattern_info['pattern'], normalized_text, re.IGNORECASE)
+            if match:
+                groups = match.groups()
+                print(f"Pattern matched for betting row: {groups}", file=sys.stderr)
+                
+                if len(groups) >= 5:
+                    house = groups[0].capitalize()
+                    bet_type = groups[1].strip()
+                    odds = groups[2]
+                    stake = groups[3]
+                    profit = groups[4]
+                    
+                    # Clean up bet type (remove extra spaces, normalize)
+                    bet_type = re.sub(r'\s+', ' ', bet_type)
+                    bet_type = bet_type.replace('º', '°').replace('2°', '2º')
+                    
+                    return {
+                        'bettingHouse': f"{house} (BR)",
+                        'betType': bet_type,
+                        'odds': odds,
+                        'stake': stake,
+                        'profit': profit
+                    }
         
         return None
 
