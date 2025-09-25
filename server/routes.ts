@@ -97,51 +97,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // UNIFIED PIPELINE: Use ONLY coordinate-based parser for 100% consistency
-        console.log('Starting unified coordinate-based OCR processing...');
-        const { analyzeImageWithCoordinateParser } = await import('./local-ocr');
-        const result = await analyzeImageWithCoordinateParser(imageBase64);
+        // PURE EXTRACTION: Use working OCR blocks for simple text reading  
+        console.log('Starting pure text extraction...');
+        const { analyzeImageBlocks } = await import('./local-ocr');
+        const blocksResult = await analyzeImageBlocks(imageBase64);
         
         const processingTime = Date.now() - startTime;
-        console.log(`Coordinate parser processing completed in ${processingTime}ms`);
+        console.log(`Pure text extraction completed in ${processingTime}ms`);
         
-        // Structured debug trace for observability and troubleshooting
-        console.log('DEBUG: OCR_SUCCESS', JSON.stringify({
-          method: 'coordinate_parser_unified',
-          houses_detected: [result.betA?.bettingHouse, result.betB?.bettingHouse],
-          teams: [result.betA?.teamA, result.betA?.teamB],
-          odds: [result.betA?.odds, result.betB?.odds],
-          stakes: [result.betA?.stake, result.betB?.stake],
-          bet_types: [result.betA?.betType, result.betB?.betType],
-          date: result.gameDate,
-          sport: result.sport,
-          league: result.league,
-          total_profit: result.totalProfitPercentage,
+        // Extract all text from blocks for user verification
+        const allText = blocksResult.blocks ? 
+          blocksResult.blocks.map(block => block.text).filter(text => text.trim()).join(' ') : '';
+        
+        // Create simple result for user verification
+        const simpleResult = {
+          success: true,
+          method: 'pure_text_extraction',
+          raw_text: allText,
+          text_blocks: blocksResult.blocks || [],
+          total_blocks: blocksResult.blocks ? blocksResult.blocks.length : 0,
+          
+          // Provide empty template for user to fill manually
+          betA: {
+            bettingHouse: '',
+            teamA: '',
+            teamB: '',
+            betType: '',
+            odds: '',
+            stake: '',
+            payout: ''
+          },
+          betB: {
+            bettingHouse: '',
+            teamA: '',
+            teamB: '',
+            betType: '',
+            odds: '',
+            stake: '',
+            payout: ''
+          },
+          gameDate: '',
+          gameTime: '',
+          sport: '',
+          league: ''
+        };
+        
+        console.log('DEBUG: PURE_EXTRACTION_SUCCESS', JSON.stringify({
+          method: 'pure_text_extraction',
+          total_blocks: simpleResult.total_blocks,
+          text_preview: allText.substring(0, 150),
           processing_time_ms: processingTime,
           timestamp: new Date().toISOString()
         }));
         
         res.json({
-          ...result,
-          processingTime: `${processingTime}ms`,
-          method: 'unified_coordinate_parser'
+          ...simpleResult,
+          processingTime: `${processingTime}ms`
         });
-      } catch (coordinateError: any) {
-        console.error('ERROR: Unified coordinate parser failed - REQUIRES INVESTIGATION');
         
-        // Structured error trace for debugging
-        console.log('DEBUG: OCR_FAILED', JSON.stringify({
-          method: 'coordinate_parser_unified',
-          error_message: coordinateError?.message || 'Unknown error',
-          error_stack: coordinateError?.stack?.substring(0, 500) || 'No stack trace',
+      } catch (extractionError: any) {
+        console.error('ERROR: Pure text extraction failed');
+        
+        console.log('DEBUG: EXTRACTION_FAILED', JSON.stringify({
+          method: 'pure_text_extraction',
+          error_message: extractionError?.message || 'Unknown error',
           processing_time_ms: Date.now() - startTime,
-          timestamp: new Date().toISOString(),
-          image_size_bytes: imageBase64.length
+          timestamp: new Date().toISOString()
         }));
         
-        // NO FALLBACK - Unified pipeline for guaranteed consistency
-        // Any failure must be investigated and fixed in the coordinate parser
-        throw new Error(`Unified OCR pipeline failed - coordinate parser error: ${coordinateError?.message || 'Unknown error'}`);
+        throw new Error(`Pure text extraction failed: ${extractionError?.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('OCR analysis error:', error);
