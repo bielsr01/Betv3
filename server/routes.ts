@@ -97,37 +97,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // HYBRID SYSTEM: Combine working OCR blocks with improved processing
-        console.log('Starting hybrid OCR system (blocks + improved processing)...');
-        const { analyzeImageBlocks } = await import('./local-ocr');
-        const blocksResult = await analyzeImageBlocks(imageBase64);
+        // PURE JAVASCRIPT SYSTEM: Zero external dependencies, ultimate performance
+        console.log('Starting Pure JavaScript OCR system (100% Node.js native)...');
+        const { extractBettingDataPureJS } = await import('./js-ocr');
+        const jsResult = await extractBettingDataPureJS(imageBase64);
         
         const processingTime = Date.now() - startTime;
-        console.log(`Hybrid OCR completed in ${processingTime}ms`);
+        console.log(`Pure JavaScript OCR completed in ${processingTime}ms`);
         
-        // Extract all text from lines (structure that worked before)
-        const allText = blocksResult.lines ? 
-          blocksResult.lines.map(line => line.full_text || '').filter(text => text.trim()).join(' ') : '';
+        if (!jsResult.success) {
+          return res.status(500).json({
+            success: false,
+            error: jsResult.error || 'JavaScript OCR processing failed',
+            method: 'pure_javascript_ocr'
+          });
+        }
         
-        // Apply improved regex-based extraction from your research
-        const betData = extractBettingDataImproved(allText, blocksResult.lines || []);
-        
-        // Create result with hybrid extraction
+        // Create result using pure JavaScript OCR (already has betting data extracted)
         const simpleResult = {
           success: true,
-          method: 'hybrid_improved_extraction',
-          raw_text: allText,
-          text_blocks: blocksResult.lines || [],
-          total_blocks: blocksResult.total_blocks || 0,
+          method: 'pure_javascript_ocr',
+          raw_text: jsResult.raw_text,
+          text_blocks: jsResult.text_blocks,
+          total_blocks: jsResult.text_blocks?.length || 0,
           
-          // Automatically filled fields using improved logic
-          betA: betData.betA,
-          betB: betData.betB,
-          gameDate: betData.gameDate,
-          gameTime: betData.gameTime,
-          sport: betData.sport,
-          league: betData.league,
-          totalProfitPercentage: betData.totalProfitPercentage
+          // Already extracted fields from JavaScript OCR
+          betA: jsResult.betA || {
+            bettingHouse: '',
+            teamA: '',
+            teamB: '',
+            betType: '',
+            odds: '',
+            stake: '',
+            payout: '',
+            selectedSide: 'A'
+          },
+          betB: jsResult.betB || {
+            bettingHouse: '',
+            teamA: '',
+            teamB: '',
+            betType: '',
+            odds: '',
+            stake: '',
+            payout: '',
+            selectedSide: 'B'
+          },
+          gameDate: '',
+          gameTime: '',
+          sport: 'Futebol',
+          league: '',
+          totalProfitPercentage: jsResult.totalProfitPercentage || '',
+          processing_info: jsResult.processing_info
         };
         
         // Improved extraction function based on your research
