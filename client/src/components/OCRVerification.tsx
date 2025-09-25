@@ -26,7 +26,26 @@ export default function OCRVerification({
   onCancel, 
   isLoading 
 }: OCRVerificationProps) {
-  const [formData, setFormData] = useState<OCRData>(ocrData);
+  // Initialize form data with proper date handling for DD-MM-YYYY format
+  const initializeFormData = (data: OCRData): OCRData => {
+    const initialData = { ...data };
+    
+    // If we have a formatted DD-MM-YYYY date, ensure the gameDate is properly set
+    if (data.gameDateFormatted && !data.gameDate) {
+      try {
+        // Convert DD-MM-YYYY to proper Date object
+        const [day, month, year] = data.gameDateFormatted.split('-');
+        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        initialData.gameDate = dateObj;
+      } catch (error) {
+        console.error('Failed to parse formatted date:', data.gameDateFormatted, error);
+      }
+    }
+    
+    return initialData;
+  };
+
+  const [formData, setFormData] = useState<OCRData>(initializeFormData(ocrData));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validateForm = () => {
@@ -109,10 +128,68 @@ export default function OCRVerification({
   };
 
   const updateGameField = (field: 'gameDate' | 'gameTime' | 'sport' | 'league' | 'totalProfitPercentage', value: Date | string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      
+      // If gameDate is being updated, synchronize the formatted date fields
+      if (field === 'gameDate' && value instanceof Date) {
+        const day = value.getDate().toString().padStart(2, '0');
+        const month = (value.getMonth() + 1).toString().padStart(2, '0');
+        const year = value.getFullYear().toString();
+        
+        updated.gameDateFormatted = `${day}-${month}-${year}`;
+        
+        // If we have a game time, combine it with the new date
+        if (prev.gameTime) {
+          updated.gameDateTime = `${day}-${month}-${year} ${prev.gameTime}`;
+        } else {
+          updated.gameDateTime = `${day}-${month}-${year}`;
+        }
+      }
+      
+      // If gameTime is being updated and we have a date, update the combined dateTime
+      if (field === 'gameTime' && typeof value === 'string' && prev.gameDateFormatted) {
+        updated.gameDateTime = `${prev.gameDateFormatted} ${value}`;
+      }
+      
+      return updated;
+    });
+    
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
+  };
+
+  // Helper function to get display date - prioritizes formatted date when available
+  const getDisplayDate = () => {
+    if (formData.gameDateTime) {
+      // If we have the combined DD-MM-YYYY HH:MM format, show it
+      return formData.gameDateTime;
+    }
+    if (formData.gameDateFormatted) {
+      // If we have DD-MM-YYYY format, show it
+      return formData.gameDateFormatted + (formData.gameTime ? ` ${formData.gameTime}` : '');
+    }
+    if (formData.gameDate) {
+      // Fallback to standard date formatting
+      return format(new Date(formData.gameDate), 'dd-MM-yyyy', { locale: ptBR }) + (formData.gameTime ? ` ${formData.gameTime}` : '');
+    }
+    return null;
+  };
+
+  // Helper function to get calendar date - converts to proper Date object
+  const getCalendarDate = () => {
+    if (formData.gameDate) {
+      // If gameDate is already a Date object, use it directly
+      if (formData.gameDate instanceof Date) {
+        return formData.gameDate;
+      }
+      // If gameDate is a string, convert it
+      if (typeof formData.gameDate === 'string') {
+        return new Date(formData.gameDate + 'T12:00:00');
+      }
+    }
+    return undefined;
   };
 
   const renderBetForm = (bet: 'betA' | 'betB', title: string) => {
@@ -335,19 +412,28 @@ export default function OCRVerification({
                         data-testid="button-game-date"
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.gameDate ? format(new Date(formData.gameDate + 'T12:00:00'), 'PPP', { locale: ptBR }) : 'Selecione a data'}
+                        {formData.gameDate ? (
+                          getDisplayDate() || format(getCalendarDate() || new Date(), 'PPP', { locale: ptBR })
+                        ) : 'Selecione a data'}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        selected={formData.gameDate ? new Date(formData.gameDate + 'T12:00:00') : undefined}
+                        selected={getCalendarDate()}
                         onSelect={(date) => date && updateGameField('gameDate', date)}
                         initialFocus
                       />
                     </PopoverContent>
                   </Popover>
                   {errors.gameDate && <p className="text-sm text-destructive">{errors.gameDate}</p>}
+                  
+                  {/* Show formatted date info if available */}
+                  {(formData.gameDateFormatted || formData.gameDateTime) && (
+                    <div className="text-xs text-muted-foreground">
+                      📅 Data extraída: {formData.gameDateTime || formData.gameDateFormatted}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -430,7 +516,7 @@ export default function OCRVerification({
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={() => setFormData(ocrData)}
+            onClick={() => setFormData(initializeFormData(ocrData))}
             disabled={isLoading}
             data-testid="button-reset-verification"
           >
