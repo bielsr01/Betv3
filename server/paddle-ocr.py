@@ -166,21 +166,93 @@ class BettingSlipOCR:
         ]
 
     def extract_table_structure(self, image_bytes: bytes) -> List[Dict]:
-        """Extract table structure using Google Vision API table detection"""
+        """Extract table structure using coordinate-based grouping (simpler approach)"""
         try:
             if self.client is None:
                 print("Google Vision API not available, skipping table detection", file=sys.stderr)
                 return []
                 
-            print("Using Google Vision API for table detection", file=sys.stderr)
+            print("Using Google Vision API for simple table extraction", file=sys.stderr)
             
-            # For now, return empty array as Google Vision API doesn't have direct table extraction
-            # The document_text_detection already provides structured text data
-            return []
+            # Get text with coordinates using basic text detection
+            image = vision.Image(content=image_bytes)
+            response = self.client.text_detection(image=image)
+            texts = response.text_annotations
+            
+            if not texts:
+                return []
+            
+            # Skip the first result (full text) and work with individual words
+            word_boxes = []
+            for text in texts[1:]:
+                vertices = text.bounding_poly.vertices
+                if len(vertices) >= 4:
+                    # Calculate bounding box
+                    x_coords = [v.x for v in vertices]
+                    y_coords = [v.y for v in vertices]
+                    
+                    word_boxes.append({
+                        'text': text.description,
+                        'x': min(x_coords),
+                        'y': min(y_coords),
+                        'width': max(x_coords) - min(x_coords),
+                        'height': max(y_coords) - min(y_coords),
+                        'center_x': sum(x_coords) / len(x_coords),
+                        'center_y': sum(y_coords) / len(y_coords)
+                    })
+            
+            # Group words into rows based on Y coordinate (simple table simulation)
+            table_rows = self._group_words_into_table_rows(word_boxes)
+            
+            print(f"Extracted {len(table_rows)} table rows with coordinate grouping", file=sys.stderr)
+            return table_rows
             
         except Exception as e:
-            print(f"Error in table structure extraction: {e}", file=sys.stderr)
+            print(f"Error in simple table extraction: {e}", file=sys.stderr)
             return []
+    
+    def _group_words_into_table_rows(self, word_boxes: List[Dict], y_tolerance: int = 15) -> List[Dict]:
+        """Group words into table rows based on Y coordinates"""
+        if not word_boxes:
+            return []
+        
+        # Sort by Y coordinate
+        sorted_words = sorted(word_boxes, key=lambda w: w['center_y'])
+        
+        rows = []
+        current_row = []
+        current_y = sorted_words[0]['center_y']
+        
+        for word in sorted_words:
+            # If word is on the same row (within tolerance)
+            if abs(word['center_y'] - current_y) <= y_tolerance:
+                current_row.append(word)
+            else:
+                # Start new row
+                if current_row:
+                    # Sort current row by X coordinate
+                    current_row.sort(key=lambda w: w['center_x'])
+                    rows.append({
+                        'type': 'table_row',
+                        'y_position': current_y,
+                        'cells': current_row,
+                        'text': ' '.join([w['text'] for w in current_row])
+                    })
+                
+                current_row = [word]
+                current_y = word['center_y']
+        
+        # Don't forget the last row
+        if current_row:
+            current_row.sort(key=lambda w: w['center_x'])
+            rows.append({
+                'type': 'table_row',
+                'y_position': current_y,
+                'cells': current_row,
+                'text': ' '.join([w['text'] for w in current_row])
+            })
+        
+        return rows
 
     def _calculate_center(self, bbox: List) -> Dict:
         """Calculate center point of bounding box"""
