@@ -100,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Raw endpoint - returns unprocessed Mistral OCR text
+  // OCR Raw endpoint - returns raw text using Perplexity AI
   app.post('/api/ocr/raw', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -109,73 +109,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Image data is required' });
       }
 
-      const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
-      if (!MISTRAL_API_KEY) {
-        return res.status(500).json({ error: 'Mistral API key not configured' });
+      const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+      if (!PERPLEXITY_API_KEY) {
+        return res.status(500).json({ error: 'Perplexity API key not configured' });
       }
 
-      // Clean base64 string
+      // Call Perplexity API directly for raw text extraction
       const cleanBase64 = imageBase64.includes('base64,') 
         ? imageBase64.split('base64,')[1] 
         : imageBase64;
 
-      // Call Mistral OCR API directly for raw text
+      const imageUrl = `data:image/png;base64,${cleanBase64}`;
+      
       const payload = {
-        model: "mistral-ocr-latest",
-        document: {
-          type: "image_url",
-          image_url: `data:image/png;base64,${cleanBase64}`
-        },
-        include_image_base64: false
+        model: "llama-3.1-sonar-small-128k-online",
+        messages: [
+          {
+            role: "system",
+            content: "You are an OCR system. Extract all visible text from the image exactly as it appears. Do not interpret, translate, or format the text. Return only the raw text content with line breaks preserved."
+          },
+          {
+            role: "user",
+            content: `Extract all text from this image:\n\n![Image](${imageUrl})`
+          }
+        ],
+        max_tokens: 2000,
+        temperature: 0.1,
+        stream: false,
+        return_images: false,
+        return_related_questions: false
       };
 
-      const response = await fetch('https://api.mistral.ai/v1/ocr', {
+      const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${MISTRAL_API_KEY}`
+          'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        throw new Error(`Mistral OCR API error: ${response.status}`);
+        throw new Error(`Perplexity API error: ${response.status}`);
       }
 
-      const ocrResult = await response.json();
+      const result = await response.json();
       
-      // Extract raw text without formatting
-      let rawText = '';
-      if (ocrResult.pages && ocrResult.pages.length > 0) {
-        // Get markdown content and convert to plain text
-        const markdown = ocrResult.pages[0].markdown || '';
-        
-        // Remove markdown formatting to get clean text
-        rawText = markdown
-          .replace(/#{1,6}\s+/g, '') // Remove headers
-          .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
-          .replace(/\*([^*]+)\*/g, '$1') // Remove italic
-          .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Remove links
-          .replace(/\|/g, ' ') // Remove table separators
-          .replace(/---+/g, '') // Remove horizontal rules
-          .replace(/^\s*[\-\*\+]\s+/gm, '') // Remove list bullets
-          .replace(/^\s*\d+\.\s+/gm, '') // Remove numbered lists
-          .replace(/\n{3,}/g, '\n\n') // Normalize line breaks
-          .trim();
+      // Extract the raw text content
+      let rawText = 'Nenhum texto extraído da imagem.';
+      if (result.choices && result.choices[0] && result.choices[0].message) {
+        rawText = result.choices[0].message.content;
       }
       
-      // If no text extracted, show raw response
-      if (!rawText) {
-        rawText = `Nenhum texto extraído.\n\nResposta completa da API:\n${JSON.stringify(ocrResult, null, 2)}`;
-      }
-      
-      // Return clean text as plain text
+      // Return raw text as plain text
       res.set('Content-Type', 'text/plain; charset=utf-8');
       res.send(rawText);
       
     } catch (error) {
-      console.error('Mistral OCR raw analysis error:', error);
-      res.status(500).json({ error: 'Failed to get raw Mistral OCR result' });
+      console.error('Perplexity raw analysis error:', error);
+      res.status(500).json({ error: 'Failed to get raw Perplexity result' });
     }
   });
 
