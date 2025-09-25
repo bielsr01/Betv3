@@ -8,8 +8,6 @@ BetTracker is a sophisticated web application designed to streamline sports bett
 
 Preferred communication style: Simple, everyday language.
 
-**IMPORTANT OCR PREFERENCE**: User explicitly REJECTED all previous OCR solutions (Tesseract, DocTR, OCR.space, Gemini). System now uses **PyTorch-based custom OCR engine** as the definitive solution.
-
 ## System Architecture
 
 ### Frontend Architecture
@@ -41,16 +39,11 @@ Preferred communication style: Simple, everyday language.
 - **Dashboard**: Card-based bet visualization with filtering and sorting capabilities
 - **Theme System**: Comprehensive dark/light mode with CSS custom properties
 
-### Data Processing Pipeline - PyTorch OCR System
-- **OCR System**: Custom PyTorch-based OCR engine as user's definitive choice
-- **Image Processing**: Advanced preprocessing with PyTorch tensors, edge detection, and quality enhancement
-- **Multi-method Extraction**: Hybrid approach using OpenCV contour detection, PyTorch pattern recognition, and region-based analysis
-- **Performance**: Ultra-fast processing ~1-2 second response time
-- **Accuracy**: Real data extraction from actual betting slip images (no simulation)
-- **Portuguese Support**: Full Portuguese character and betting house recognition
-- **Betting House Recognition**: Comprehensive recognition including KTO, Pinnacle, BravoBet, Bet365, Betfair, Superbet
-- **Date Format**: Brazilian date format (DD/MM/YYYY HH:MM) as explicitly requested
-- **Architecture**: Clean single-engine system with no fallbacks per user requirements
+### Data Processing Pipeline
+- **Image Handling**: Drag-and-drop file upload with clipboard paste support
+- **OCR Integration**: Automated extraction of betting house, teams, odds, stakes, and payouts
+- **Verification Step**: User-editable form for OCR result validation before database storage
+- **Bet Resolution**: Manual resolution system with profit/loss calculations
 
 ### Design System
 - **Color Palette**: Professional blue primary with semantic status colors
@@ -72,12 +65,8 @@ Preferred communication style: Simple, everyday language.
 - **class-variance-authority**: Type-safe component variant handling
 - **react-dropzone**: File upload with drag-and-drop functionality
 
-### PyTorch OCR Stack
-- **torch**: PyTorch 2.8.0+cpu for neural network operations and tensor processing
-- **numpy**: Numerical computation for image processing arrays
-- **pillow (PIL)**: Image loading, processing, and enhancement
-- **opencv-python**: Computer vision operations for contour detection and image analysis
-- **transformers**: Advanced model support (installed but not primary dependency)
+### Image Processing
+- **cropperjs**: Image cropping functionality for bet slip optimization
 
 ### Form Management
 - **react-hook-form**: Performant form handling with validation
@@ -87,30 +76,3 @@ Preferred communication style: Simple, everyday language.
 - **typescript**: Static type checking throughout the application
 - **vite**: Development server and build tool
 - **tsx**: TypeScript execution for server development
-
-## Recent Changes (September 2025)
-
-### OCR System Complete Overhaul
-- **✅ COMPLETED**: Removed all previous OCR dependencies per user explicit request
-- **✅ COMPLETED**: Implemented custom PyTorch-based OCR engine from scratch
-- **✅ COMPLETED**: Achieved real data extraction (no more hardcoded/simulated data)
-- **✅ COMPLETED**: Processing time optimized to 1-2 seconds
-- **✅ COMPLETED**: Full Portuguese support with Brazilian date formatting
-- **✅ COMPLETED**: Multi-method hybrid extraction (OpenCV + PyTorch + region analysis)
-- **✅ COMPLETED**: Comprehensive betting house recognition system
-- **✅ COMPLETED**: Production-ready integration with error handling and logging
-
-### Architecture Improvements  
-- **✅ COMPLETED**: Clean server/routes.ts integration with PyTorch OCR engine
-- **✅ COMPLETED**: Robust error handling and timeout management
-- **✅ COMPLETED**: Real-time processing logs and debug information
-- **✅ COMPLETED**: Image validation and optimization preprocessing
-
-### User Requirements Fulfilled
-- **✅ NO Tesseract**: Completely removed as explicitly rejected by user
-- **✅ NO DocTR**: Removed per user request for PyTorch-only solution  
-- **✅ NO OCR.space**: Removed due to timeout issues and user preference change
-- **✅ NO Gemini**: Removed per user request for PyTorch-only solution
-- **✅ PyTorch Only**: Custom implementation using PyTorch as primary and only OCR engine
-- **✅ Real Data**: System now extracts actual data from uploaded images
-- **✅ Brazilian Format**: DD/MM/YYYY and HH:MM time formatting implemented

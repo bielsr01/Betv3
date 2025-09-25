@@ -8,47 +8,29 @@ import Dashboard from './Dashboard';
 import BetManagement from './BetManagement';
 import Reports from './Reports';
 import { ThemeToggle } from './ThemeToggle';
-// Using DocTR db_mobilenet_v3_large AI OCR for real text recognition from images
+// Removed Tesseract.js - now using Gemini Vision API
 import { apiRequest } from '@/lib/queryClient';
 
 type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports';
 
-// OCR function using DocTR db_mobilenet_v3_large AI OCR
+// OCR function using Gemini Vision API
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
   try {
-    console.log('Starting DocTR db_mobilenet_v3_large OCR processing...');
+    console.log('Starting Gemini Vision OCR processing...');
     
-    // Convert and compress image for optimal OCR processing
+    // Convert file to base64
     const base64 = await new Promise<string>((resolve) => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d')!;
-      const img = new Image();
-      
-      img.onload = () => {
-        // Resize image to max 800px (never upscale) for optimal OCR processing
-        const maxDim = 800;
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const width = img.width * scale;
-        const height = img.height * scale;
-        
-        canvas.width = width;
-        canvas.height = height;
-        
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Convert to JPEG with 75% quality for efficient processing
-        const base64Data = canvas.toDataURL('image/jpeg', 0.75).split(',')[1];
-        resolve(base64Data);
-      };
-      
       const reader = new FileReader();
       reader.onload = () => {
-        img.src = reader.result as string;
+        const result = reader.result as string;
+        // Remove data:image/png;base64, prefix
+        const base64Data = result.split(',')[1];
+        resolve(base64Data);
       };
       reader.readAsDataURL(file);
     });
     
-    // Call backend API for DocTR db_mobilenet_v3_large OCR analysis
+    // Call backend API for Gemini Vision analysis
     const response = await fetch('/api/ocr/analyze', {
       method: 'POST',
       headers: {
@@ -58,18 +40,18 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
     });
     
     if (!response.ok) {
-      throw new Error('Failed to analyze image with DocTR db_mobilenet_v3_large OCR');
+      throw new Error('Failed to analyze image with Gemini Vision');
     }
     
-    const ocrData = await response.json();
-    console.log('DocTR db_mobilenet_v3_large OCR result:', ocrData);
+    const geminiData = await response.json();
+    console.log('Gemini Vision OCR result:', geminiData);
     
-    // Convert OCR response to our OCRData format
-    return convertOCRToFormat(ocrData);
+    // Convert Gemini response to our OCRData format
+    return convertGeminiToOCRFormat(geminiData);
     
   } catch (error) {
-    console.error('DocTR db_mobilenet_v3_large OCR processing failed:', error);
-    throw new Error('Falha ao processar imagem. Tente novamente.');
+    console.error('Gemini Vision OCR processing failed:', error);
+    throw new Error('Falha ao processar imagem com IA. Tente novamente.');
   }
 };
 
@@ -308,46 +290,42 @@ const parseOCRText = (text: string): OCRData => {
   }
 };
 
-// Helper function to convert OCR response to our format
-const convertOCRToFormat = (ocrData: any): OCRData => {
+// Helper function to convert Gemini response to our format
+const convertGeminiToOCRFormat = (geminiData: any): OCRData => {
   // Calculate payouts: payout = stake × odds
-  const betAPayout = ocrData.betA.stake && ocrData.betA.odds ? 
-    (parseFloat(ocrData.betA.stake) * parseFloat(ocrData.betA.odds)).toFixed(2) : '0';
-  const betBPayout = ocrData.betB.stake && ocrData.betB.odds ? 
-    (parseFloat(ocrData.betB.stake) * parseFloat(ocrData.betB.odds)).toFixed(2) : '0';
-
-  // FIXED: Extract only the number from totalProfitPercentage, removing any % symbol
-  const profitPercentage = ocrData.totalProfitPercentage ? 
-    ocrData.totalProfitPercentage.toString().replace('%', '') : '0';
+  const betAPayout = geminiData.betA.stake && geminiData.betA.odds ? 
+    (parseFloat(geminiData.betA.stake) * parseFloat(geminiData.betA.odds)).toFixed(2) : '0';
+  const betBPayout = geminiData.betB.stake && geminiData.betB.odds ? 
+    (parseFloat(geminiData.betB.stake) * parseFloat(geminiData.betB.odds)).toFixed(2) : '0';
 
   return {
     betA: {
-      bettingHouse: ocrData.betA.bettingHouse || '',
-      teamA: ocrData.betA.teamA || '',
-      teamB: ocrData.betA.teamB || '',
-      betType: ocrData.betA.betType || '',
+      bettingHouse: geminiData.betA.bettingHouse || '',
+      teamA: geminiData.betA.teamA || '',
+      teamB: geminiData.betA.teamB || '',
+      betType: geminiData.betA.betType || '',
       selectedSide: 'A',
-      odds: ocrData.betA.odds || '0',
-      stake: ocrData.betA.stake || '0',
+      odds: geminiData.betA.odds || '0',
+      stake: geminiData.betA.stake || '0',
       payout: betAPayout,
-      profit: ocrData.betA.profit || '0'
+      profit: geminiData.betA.profit || '0'
     },
     betB: {
-      bettingHouse: ocrData.betB.bettingHouse || '',
-      teamA: ocrData.betB.teamA || '',
-      teamB: ocrData.betB.teamB || '',
-      betType: ocrData.betB.betType || '',
+      bettingHouse: geminiData.betB.bettingHouse || '',
+      teamA: geminiData.betB.teamA || '',
+      teamB: geminiData.betB.teamB || '',
+      betType: geminiData.betB.betType || '',
       selectedSide: 'B',
-      odds: ocrData.betB.odds || '0',
-      stake: ocrData.betB.stake || '0',
+      odds: geminiData.betB.odds || '0',
+      stake: geminiData.betB.stake || '0',
       payout: betBPayout,
-      profit: ocrData.betB.profit || '0'
+      profit: geminiData.betB.profit || '0'
     },
-    gameDate: ocrData.gameDate ? new Date(ocrData.gameDate) : new Date(),
-    gameTime: ocrData.gameTime || '00:00',
-    sport: ocrData.sport || '',
-    league: ocrData.league || '',
-    totalProfitPercentage: profitPercentage // FIXED: Now correctly extracts just the number
+    gameDate: geminiData.gameDate || new Date().toISOString().split('T')[0],
+    gameTime: geminiData.gameTime || '00:00',
+    sport: geminiData.sport || '',
+    league: geminiData.league || '',
+    totalProfitPercentage: geminiData.totalProfitPercentage || '0'
   };
 };
 
@@ -394,7 +372,7 @@ export default function BetTracker() {
     setCurrentImageUrl(imageUrl);
     
     try {
-      // Real OCR processing using DocTR db_mobilenet_v3_large
+      // Real OCR processing using Tesseract.js
       const ocrData = await processOCRFromImage(file);
       setCurrentOCRData(ocrData);
       setCurrentState('verification');
