@@ -41,24 +41,28 @@ class PerplexityOCR:
             # Create data URL for the image
             image_url = f"data:image/png;base64,{base64_image}"
             
-            # Prepare the request for raw text extraction
+            # Prepare the request for raw text extraction with proper image format
             payload = {
                 "model": self.model,
                 "messages": [
                     {
-                        "role": "system",
-                        "content": "You are an OCR system. Extract all visible text from the image exactly as it appears. Do not interpret, translate, or format the text. Return only the raw text content with line breaks preserved."
-                    },
-                    {
                         "role": "user",
-                        "content": f"Extract all text from this image:\n\n![Image]({image_url})"
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Extract all visible text from this image exactly as it appears. Do not interpret, translate, or format the text. Return only the raw text content with line breaks preserved."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_url
+                                }
+                            }
+                        ]
                     }
                 ],
                 "max_tokens": 2000,
-                "temperature": 0.1,
-                "stream": False,
-                "return_images": False,
-                "return_related_questions": False
+                "temperature": 0.1
             }
             
             headers = {
@@ -100,13 +104,16 @@ class PerplexityOCR:
             # Create data URL for the image
             image_url = f"data:image/png;base64,{base64_image}"
             
-            # Prepare the request for structured extraction
+            # Prepare the request for structured extraction with proper image format
             payload = {
                 "model": self.model,
                 "messages": [
                     {
-                        "role": "system",
-                        "content": """You are a betting slip data extraction expert. Analyze the betting slip image and extract the following information in JSON format:
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": """You are a betting slip data extraction expert. Analyze the betting slip image and extract the following information in JSON format:
 
 {
   "betA": {
@@ -135,17 +142,18 @@ class PerplexityOCR:
 }
 
 Extract real values from the image. If some data is not visible, use reasonable defaults but mark uncertainty."""
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Extract betting data from this betting slip image:\n\n![Betting Slip]({image_url})"
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_url
+                                }
+                            }
+                        ]
                     }
                 ],
                 "max_tokens": 1500,
-                "temperature": 0.1,
-                "stream": False,
-                "return_images": False,
-                "return_related_questions": False
+                "temperature": 0.1
             }
             
             headers = {
