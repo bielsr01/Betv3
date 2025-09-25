@@ -125,7 +125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 try {
                   const result = JSON.parse(stdout.trim());
                   resolve(result);
-                } catch (e) {
+                } catch (e: any) {
                   reject(new Error(`Failed to parse DocTR AI output: ${e.message}. Output: ${stdout.substring(0, 200)}`));
                 }
               } else {
@@ -133,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             });
             
-            child.on('error', (err) => {
+            child.on('error', (err: any) => {
               clearTimeout(timeout);
               reject(err);
             });
@@ -146,21 +146,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const processingTime = Date.now() - startTime;
           console.log(`✅ DocTR AI OCR completed in ${processingTime}ms`);
 
-          if (doctrResult.success) {
+          if ((doctrResult as any).success) {
             console.log('🎉 SUCCESS: DocTR AI extraction succeeded (user preferred method)');
             console.log('DEBUG: DOCTR_AI_SUCCESS', JSON.stringify({
-              method: doctrResult.method,
-              betA_house: doctrResult.betA?.bettingHouse,
-              betB_house: doctrResult.betB?.bettingHouse,
-              profit: doctrResult.totalProfitPercentage,
+              method: (doctrResult as any).method,
+              betA_house: (doctrResult as any).betA?.bettingHouse,
+              betB_house: (doctrResult as any).betB?.bettingHouse,
+              profit: (doctrResult as any).totalProfitPercentage,
               processing_time_ms: processingTime,
               timestamp: new Date().toISOString()
             }));
             
-            res.json(doctrResult);
+            res.json(doctrResult as any);
             return;
           }
-        } catch (doctrError) {
+        } catch (doctrError: any) {
           console.log('⚠️ DocTR AI unavailable, falling back to Gemini AI...');
           console.log('DocTR error:', doctrError.message);
         }
