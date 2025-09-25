@@ -97,32 +97,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // PURE JAVASCRIPT SYSTEM: Zero external dependencies, ultimate performance
-        console.log('Starting Pure JavaScript OCR system (100% Node.js native)...');
-        const { extractBettingDataPureJS } = await import('./js-ocr');
-        const jsResult = await extractBettingDataPureJS(imageBase64);
+        // DOCTR AI SYSTEM: Advanced AI-powered OCR with PyTorch backend
+        console.log('Starting DocTR AI OCR system (PyTorch + AI models)...');
+        const doctrResult = await new Promise((resolve, reject) => {
+          const child = spawn('python3', ['server/doctr_ai_ocr.py', imageBase64], {
+            stdio: ['pipe', 'pipe', 'pipe']
+          });
+          
+          let stdout = '';
+          let stderr = '';
+          
+          child.stdout.on('data', (data) => stdout += data);
+          child.stderr.on('data', (data) => stderr += data);
+          
+          child.on('close', (code) => {
+            if (code === 0) {
+              try {
+                const result = JSON.parse(stdout);
+                resolve(result);
+              } catch (e) {
+                reject(new Error(`Failed to parse DocTR AI output: ${e.message}`));
+              }
+            } else {
+              reject(new Error(`DocTR AI failed: ${stderr}`));
+            }
+          });
+          
+          child.on('error', (err) => reject(err));
+        });
         
         const processingTime = Date.now() - startTime;
-        console.log(`Pure JavaScript OCR completed in ${processingTime}ms`);
+        console.log(`DocTR AI OCR completed in ${processingTime}ms`);
         
-        if (!jsResult.success) {
+        if (!doctrResult.success) {
           return res.status(500).json({
             success: false,
-            error: jsResult.error || 'JavaScript OCR processing failed',
-            method: 'pure_javascript_ocr'
+            error: doctrResult.error || 'DocTR AI OCR processing failed',
+            method: 'doctr_ai_ocr'
           });
         }
         
-        // Create result using pure JavaScript OCR (already has betting data extracted)
+        // Create result using DocTR AI OCR (already has betting data extracted)
         const simpleResult = {
           success: true,
-          method: 'pure_javascript_ocr',
-          raw_text: jsResult.raw_text,
-          text_blocks: jsResult.text_blocks,
-          total_blocks: jsResult.text_blocks?.length || 0,
+          method: 'doctr_ai_pytorch',
+          raw_text: doctrResult.raw_text,
+          text_blocks: doctrResult.text_blocks,
+          total_blocks: doctrResult.text_blocks?.length || 0,
           
-          // Already extracted fields from JavaScript OCR
-          betA: jsResult.betA || {
+          // Already extracted fields from DocTR AI OCR
+          betA: doctrResult.betA || {
             bettingHouse: '',
             teamA: '',
             teamB: '',
@@ -132,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             payout: '',
             selectedSide: 'A'
           },
-          betB: jsResult.betB || {
+          betB: doctrResult.betB || {
             bettingHouse: '',
             teamA: '',
             teamB: '',
@@ -146,8 +170,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           gameTime: '',
           sport: 'Futebol',
           league: '',
-          totalProfitPercentage: jsResult.totalProfitPercentage || '',
-          processing_info: jsResult.processing_info
+          totalProfitPercentage: doctrResult.totalProfitPercentage || '',
+          processing_info: doctrResult.processing_info
         };
         
         // Improved extraction function based on your research

@@ -8,6 +8,8 @@ BetTracker is a sophisticated web application designed to streamline sports bett
 
 Preferred communication style: Simple, everyday language.
 
+**IMPORTANT OCR PREFERENCE**: User explicitly REJECTED Tesseract completely. DocTR with PyTorch is the required OCR solution. Never suggest or implement Tesseract alternatives - only use DocTR AI system.
+
 ## System Architecture
 
 ### Frontend Architecture
@@ -39,14 +41,16 @@ Preferred communication style: Simple, everyday language.
 - **Dashboard**: Card-based bet visualization with filtering and sorting capabilities
 - **Theme System**: Comprehensive dark/light mode with CSS custom properties
 
-### Data Processing Pipeline
+### Data Processing Pipeline - DocTR AI System
 - **Image Handling**: Drag-and-drop file upload with clipboard paste support
-- **OCR Integration**: Sophisticated coordinate-based parsing with 100% accuracy for betting house, teams, odds, stakes, and payouts
-- **Multi-language Support**: Full Portuguese character support with Unicode normalization
-- **Intelligent Extraction**: Context-aware number classification that distinguishes bet type numbers from actual data values
-- **Betting House Recognition**: Comprehensive support for 15+ major betting houses including BravoBet, Blaze, KTO, Pinnacle, and more
-- **Verification Step**: User-editable form for OCR result validation before database storage
+- **AI OCR Integration**: DocTR (Document Text Recognition) with PyTorch backend for advanced text extraction
+- **Machine Learning**: State-of-the-art transformer models for document understanding and text recognition
+- **Multi-language Support**: Full Portuguese character support with Unicode normalization via AI models
+- **Intelligent Extraction**: AI-powered context-aware number classification and pattern recognition
+- **Betting House Recognition**: AI-enhanced recognition of 15+ major betting houses including KTO, Pinnacle, BravoBet, Blaze, and more
+- **Verification Step**: User-editable form for AI OCR result validation before database storage
 - **Bet Resolution**: Manual resolution system with profit/loss calculations
+- **Performance**: Optimized for 50GB storage environment with PyTorch CPU backend
 
 ### Design System
 - **Color Palette**: Professional blue primary with semantic status colors
