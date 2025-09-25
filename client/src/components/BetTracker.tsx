@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { Home, Upload, BarChart3, Settings, Target, FileText } from 'lucide-react';
+import { Home, Upload, BarChart3, Settings, Target, FileText, TestTube } from 'lucide-react';
 import { OCRData, Bet } from '@shared/schema';
 import ImageUpload from './ImageUpload';
 import OCRVerification from './OCRVerification';
 import Dashboard from './Dashboard';
 import BetManagement from './BetManagement';
 import Reports from './Reports';
+import TestUpload from './TestUpload';
 import { ThemeToggle } from './ThemeToggle';
 // Removed Tesseract.js - now using Gemini Vision API
 import { apiRequest } from '@/lib/queryClient';
 
-type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports';
+type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports' | 'test-upload';
 
 // OCR function using Gemini Vision API
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
@@ -364,6 +365,12 @@ export default function BetTracker() {
       icon: BarChart3,
       id: 'reports' as AppState,
       active: currentState === 'reports'
+    },
+    {
+      title: 'Teste Upload',
+      icon: TestTube,
+      id: 'test-upload' as AppState,
+      active: currentState === 'test-upload'
     }
   ];
 
@@ -539,6 +546,9 @@ export default function BetTracker() {
       
       case 'reports':
         return <Reports />;
+      
+      case 'test-upload':
+        return <TestUpload />;
       
       case 'dashboard':
       default:

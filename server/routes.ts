@@ -100,6 +100,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // OCR Raw endpoint - returns unprocessed OCR.space result
+  app.post('/api/ocr/raw', async (req, res) => {
+    try {
+      const { imageBase64 } = req.body;
+      
+      if (!imageBase64) {
+        return res.status(400).json({ error: 'Image data is required' });
+      }
+
+      const OCR_SPACE_API_KEY = process.env.OCR_SPACE_API_KEY;
+      if (!OCR_SPACE_API_KEY) {
+        return res.status(500).json({ error: 'OCR.space API key not configured' });
+      }
+
+      // Call OCR.space API directly
+      const formData = new FormData();
+      formData.append('base64Image', `data:image/png;base64,${imageBase64}`);
+      formData.append('apikey', OCR_SPACE_API_KEY);
+      formData.append('language', 'por');
+      formData.append('isOverlayRequired', 'true');
+      formData.append('OCREngine', '2');
+
+      const response = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`OCR.space API error: ${response.status}`);
+      }
+
+      const rawResult = await response.text();
+      
+      // Return raw response as plain text
+      res.set('Content-Type', 'text/plain');
+      res.send(rawResult);
+      
+    } catch (error) {
+      console.error('OCR.space raw analysis error:', error);
+      res.status(500).json({ error: 'Failed to get raw OCR.space result' });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
