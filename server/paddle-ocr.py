@@ -466,17 +466,10 @@ class BettingSlipOCR:
                     date_str = match.group(1)
                     time_str = match.group(2)
                     
-                    # Parse date and add timezone correction if needed
+                    # Parse date without any automatic corrections
                     try:
-                        event_date = datetime.strptime(date_str, '%Y-%m-%d')
-                        
-                        # Check if we need timezone correction
-                        # If the date seems to be one day behind, add one day
-                        today = datetime.now()
-                        if event_date.date() < today.date():
-                            # Add one day to correct timezone issue
-                            event_date = event_date + timedelta(days=1)
-                            date_str = event_date.strftime('%Y-%m-%d')
+                        # Just validate the date format, but keep the original date
+                        datetime.strptime(date_str, '%Y-%m-%d')
                         
                         return {
                             'date': date_str,
