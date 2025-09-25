@@ -326,9 +326,29 @@ class BettingSlipOCR:
                 result['totalProfitPercentage'] = f"{percentage}%"
                 print(f"Real profit percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
             
-            # REGRA 2: Extrair times com Unicode (acentos) e hífens
-            # Capturar times antes de percentuais ou "Futebol" (formato: "Team A – Team B 1.59% Futebol")
-            teams_match = re.search(r'([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ&]+)\s*[–-]\s*([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ&]+)(?:\s+[\d,\.]+%)?(?:\s+Futebol)', line, re.IGNORECASE)
+            # REGRA 2A: Extrair times em formato markdown header (# Team A - Team B)
+            if line.startswith('#') and ' - ' in line:
+                # Remover o # e espaços
+                teams_line = line.lstrip('#').strip()
+                teams_parts = teams_line.split(' - ')
+                
+                if len(teams_parts) == 2:
+                    team_a = teams_parts[0].strip()
+                    team_b = teams_parts[1].strip()
+                    
+                    # Validar se são times válidos (não palavras comuns)
+                    invalid_words = ['surebet', 'google', 'chrome', 'mostrar', 'total', 'aposta', 'documento', 'evento']
+                    if (not any(word in team_a.lower() or word in team_b.lower() for word in invalid_words) 
+                        and len(team_a) > 2 and len(team_b) > 2):
+                        result['betA']['teamA'] = team_a
+                        result['betA']['teamB'] = team_b
+                        result['betB']['teamA'] = team_a
+                        result['betB']['teamB'] = team_b
+                        print(f"Teams extracted from markdown header: {team_a} vs {team_b}", file=sys.stderr)
+            
+            # REGRA 2B: Extrair times com Unicode (acentos) e hífens (formato tradicional)
+            # Capturar times antes de percentuais ou "Futebol/Basquete" (formato: "Team A – Team B 1.59% Futebol")
+            teams_match = re.search(r'([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ&]+)\s*[–-]\s*([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ&]+)(?:\s+[\d,\.]+%)?(?:\s+(Futebol|Basquete))', line, re.IGNORECASE)
             if teams_match:
                 team_a = teams_match.group(1).strip()
                 team_b = teams_match.group(2).strip()
@@ -345,18 +365,27 @@ class BettingSlipOCR:
                     result['betA']['teamB'] = team_b
                     result['betB']['teamA'] = team_a
                     result['betB']['teamB'] = team_b
-                    print(f"Teams extracted: {team_a} vs {team_b}", file=sys.stderr)
+                    print(f"Teams extracted from traditional format: {team_a} vs {team_b}", file=sys.stderr)
             
-            # REGRA 3: Extrair esporte e liga (remover ROI da liga se presente)
-            sport_match = re.search(r'Futebol\s*/\s*(.+)', line)
-            if sport_match:
-                result['sport'] = 'Futebol'
-                league_part = sport_match.group(1).strip()
-                
-                # Remover ROI da liga se estiver presente
-                league_clean = re.sub(r'\s+ROI:\s*\d+[,\.]\d+%', '', league_part)
-                result['league'] = league_clean.strip()
-                print(f"Sport/League found: {result['sport']} / {result['league']}", file=sys.stderr)
+            # REGRA 3: Extrair esporte e liga (suportar Futebol e Basquete)
+            # Formato markdown: ## Basquete / Euroleague
+            sport_markdown_match = re.search(r'##\s*(Basquete|Futebol)\s*/\s*(.+)', line)
+            if sport_markdown_match:
+                result['sport'] = sport_markdown_match.group(1)
+                result['league'] = sport_markdown_match.group(2).strip()
+                print(f"Sport/League found (markdown): {result['sport']} / {result['league']}", file=sys.stderr)
+            
+            # Formato tradicional: Futebol / Liga ou Basquete / Liga
+            elif not result.get('sport'):  # Só detectar se ainda não foi definido
+                sport_traditional_match = re.search(r'(Futebol|Basquete)\s*/\s*(.+)', line)
+                if sport_traditional_match:
+                    result['sport'] = sport_traditional_match.group(1)
+                    league_part = sport_traditional_match.group(2).strip()
+                    
+                    # Remover ROI da liga se estiver presente
+                    league_clean = re.sub(r'\s+ROI:\s*\d+[,\.]\d+%', '', league_part)
+                    result['league'] = league_clean.strip()
+                    print(f"Sport/League found (traditional): {result['sport']} / {result['league']}", file=sys.stderr)
             
             # REGRA 4: Detectar início da tabela
             if '|' in line and ('Chance' in line or 'Aposta' in line or 'Lucro' in line):
@@ -400,17 +429,35 @@ class BettingSlipOCR:
                 
                 bet_key = 'betA' if idx == 0 else 'betB'
                 
-                # Estrutura esperada da tabela: [Casa, Chance, Odds, ?, Stake, ?, ?, ?, Lucro]
+                # Estrutura real da tabela: [Casa, BetType, Extra_Info?, Odds, ?, Stake, Currency?, ?, ?, Profit]
                 if len(row) >= 3:
                     result[bet_key]['bettingHouse'] = row[0]  # Casa de aposta
-                    result[bet_key]['betType'] = row[1]       # Tipo de aposta (Chance)
-                    result[bet_key]['odds'] = self._normalize_number(row[2])  # Odds (normalizar vírgulas)
                     
-                    # Procurar stake (valor numérico brasileiro - aceitar vírgulas, R$, USD)
+                    # Limpar símbolos matemáticos do betType ($1^{1-2}$ -> 1¹⁻²)
+                    bet_type_cleaned = self._clean_mathematical_symbols(row[1])
+                    result[bet_key]['betType'] = bet_type_cleaned
+                    
+                    # Procurar odds primeiro (valor numérico válido que não seja moeda)
+                    odds_found = False
+                    for col_idx in range(2, min(len(row), 6)):  # Buscar nas primeiras colunas
+                        cell_value = row[col_idx].strip()
+                        # Deve ser um número válido (não moeda) e maior que 1 (típico de odds)
+                        if (self._is_valid_odds(cell_value) and 
+                            not self._normalize_monetary_value(cell_value) and  # Não é moeda
+                            float(self._normalize_number(cell_value)) >= 1.0):  # Odds típicos >= 1.0
+                            result[bet_key]['odds'] = self._normalize_number(cell_value)
+                            odds_found = True
+                            print(f"Odds found for {bet_key}: {cell_value} -> {result[bet_key]['odds']}", file=sys.stderr)
+                            break
+                    
+                    if not odds_found:
+                        result[bet_key]['odds'] = '1.0'  # Default
+                    
+                    # Procurar stake (valor monetário válido, maior que odds)
                     stake_found = False
                     for col_idx in range(3, len(row)):
                         normalized_value = self._normalize_monetary_value(row[col_idx])
-                        if normalized_value and normalized_value != '0':
+                        if normalized_value and float(normalized_value) > 10:  # Stakes são tipicamente > 10
                             result[bet_key]['stake'] = normalized_value
                             stake_found = True
                             print(f"Stake found for {bet_key}: {row[col_idx]} -> {normalized_value}", file=sys.stderr)
@@ -480,6 +527,52 @@ class BettingSlipOCR:
             pass
         
         return None
+
+    def _clean_mathematical_symbols(self, text: str) -> str:
+        """Clean mathematical symbols from text ($1^{1-2}$ -> 1¹⁻²)"""
+        if not text:
+            return text
+        
+        # Remove LaTeX-style formatting
+        cleaned = text.replace('$', '')
+        
+        # Convert superscript notation ^{} to actual superscript symbols
+        cleaned = re.sub(r'\^{([^}]+)}', lambda m: self._convert_to_superscript(m.group(1)), cleaned)
+        cleaned = re.sub(r'\^(\d+)', lambda m: self._convert_to_superscript(m.group(1)), cleaned)
+        
+        return cleaned.strip()
+    
+    def _convert_to_superscript(self, text: str) -> str:
+        """Convert text to superscript Unicode characters"""
+        superscript_map = {
+            '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+            '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+            '-': '⁻', '+': '⁺', '=': '⁼', '(': '⁽', ')': '⁾'
+        }
+        
+        result = ''
+        for char in text:
+            result += superscript_map.get(char, char)
+        return result
+    
+    def _is_valid_odds(self, value: str) -> bool:
+        """Check if a value looks like valid betting odds"""
+        if not value:
+            return False
+        
+        try:
+            # Remove common non-numeric characters but keep decimal points
+            cleaned = value.strip().replace(',', '.')
+            cleaned = re.sub(r'[^\d\.]', '', cleaned)
+            
+            if not cleaned:
+                return False
+                
+            num = float(cleaned)
+            # Odds are typically between 1.0 and 50.0
+            return 1.0 <= num <= 50.0
+        except (ValueError, TypeError):
+            return False
 
     def parse_ocr_space_json(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
         """Parse OCR.space native JSON response using coordinate-based extraction"""
