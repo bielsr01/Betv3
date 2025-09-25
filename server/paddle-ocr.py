@@ -13,7 +13,12 @@ import cv2
 from io import BytesIO
 from PIL import Image
 import pandas as pd
-from paddleocr import PaddleOCR, PPStructure
+from paddleocr import PaddleOCR
+try:
+    from paddleocr import PPStructure
+except ImportError:
+    # Fallback if PPStructure is not available
+    PPStructure = None
 import re
 from typing import Dict, List, Any, Optional
 
@@ -39,14 +44,18 @@ class BettingSlipOCR:
         )
         
         # Initialize PP-Structure for table detection and structure recognition
-        self.table_engine = PPStructure(
-            table=True,           # Enable table recognition
-            ocr=True,            # Enable OCR within tables
-            show_log=False,      # Reduce noise
-            lang='en+pt',        # Multi-language support
-            use_gpu=False,
-            cpu_threads=4
-        )
+        if PPStructure is not None:
+            self.table_engine = PPStructure(
+                table=True,           # Enable table recognition
+                ocr=True,            # Enable OCR within tables
+                show_log=False,      # Reduce noise
+                lang='en+pt',        # Multi-language support
+                use_gpu=False,
+                cpu_threads=4
+            )
+        else:
+            print("PPStructure not available, using basic OCR only", file=sys.stderr)
+            self.table_engine = None
         
         print("PaddleOCR initialized successfully", file=sys.stderr)
 
@@ -107,8 +116,12 @@ class BettingSlipOCR:
             return []
 
     def extract_table_structure(self, image: np.ndarray) -> List[Dict]:
-        """Extract table structure using PP-Structure"""
+        """Extract table structure using PP-Structure (if available)"""
         try:
+            if self.table_engine is None:
+                print("PP-Structure not available, skipping table detection", file=sys.stderr)
+                return []
+                
             result = self.table_engine(image)
             
             structured_data = []
