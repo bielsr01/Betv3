@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-OCR.space API implementation for betting slip data extraction
-Uses OCR.space native JSON API with Engine 2 for superior accuracy
-Optimized for Portuguese betting houses and special characters
+Mistral.ai OCR API implementation for betting slip data extraction
+Uses Mistral OCR with structured table extraction for superior accuracy
+Optimized for Portuguese betting houses and table data extraction
 """
 
 import os
@@ -17,16 +17,24 @@ import time
 
 class BettingSlipOCR:
     def __init__(self):
-        """Initialize OCR.space API client"""
-        print("Initializing OCR.space API...", file=sys.stderr)
+        """Initialize Mistral.ai OCR API client"""
+        print("Initializing Mistral.ai OCR API...", file=sys.stderr)
         
-        self.api_key = os.environ.get('OCR_SPACE_API_KEY')
-        if self.api_key:
-            self.endpoint = "https://api.ocr.space/parse/image"
-            print("OCR.space API initialized successfully", file=sys.stderr)
+        # Try Mistral.ai first, fallback to OCR.space if needed
+        self.mistral_api_key = os.environ.get('MISTRAL_API_KEY')
+        self.ocr_space_api_key = os.environ.get('OCR_SPACE_API_KEY')
+        
+        if self.mistral_api_key:
+            self.primary_ocr = "mistral"
+            self.mistral_endpoint = "https://api.mistral.ai/v1/ocr"
+            print("Mistral.ai OCR API initialized successfully", file=sys.stderr)
+        elif self.ocr_space_api_key:
+            self.primary_ocr = "ocr_space"
+            self.ocr_space_endpoint = "https://api.ocr.space/parse/image"
+            print("Falling back to OCR.space API", file=sys.stderr)
         else:
-            print("OCR.space API key not found", file=sys.stderr)
-            self.api_key = None
+            print("No OCR API keys found", file=sys.stderr)
+            self.primary_ocr = None
 
     def decode_base64_image(self, base64_string: str) -> bytes:
         """Decode base64 image string to bytes"""
@@ -38,17 +46,100 @@ class BettingSlipOCR:
             print(f"Error decoding base64 image: {e}", file=sys.stderr)
             raise
 
+    def extract_text_with_mistral_ocr(self, base64_image: str) -> Dict[str, Any]:
+        """Extract betting data using Mistral.ai OCR with structured table extraction"""
+        try:
+            if not self.mistral_api_key:
+                return self._fallback_ocr_response()
+            
+            print("Using Mistral.ai OCR API for structured table extraction...", file=sys.stderr)
+            
+            # JSON Schema for structured betting data extraction
+            betting_schema = {
+                "type": "json_schema",
+                "json_schema": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "event_info": {
+                                "type": "object",
+                                "properties": {
+                                    "teams": {"type": "string", "description": "Team names in format 'Team A - Team B'"},
+                                    "sport": {"type": "string", "description": "Sport type (e.g., Futebol)"},
+                                    "league": {"type": "string", "description": "League or competition name"},
+                                    "date": {"type": "string", "description": "Game date in YYYY-MM-DD format"},
+                                    "time": {"type": "string", "description": "Game time in HH:MM format"},
+                                    "profit_percentage": {"type": "string", "description": "Total profit percentage (e.g., 3.45%)"}
+                                },
+                                "required": ["teams", "sport", "league", "date", "time"]
+                            },
+                            "betting_table": {
+                                "type": "array",
+                                "description": "Table of betting data with columns: Casa de Aposta, Chance, Aposta, Lucro",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "casa_aposta": {"type": "string", "description": "Betting house name"},
+                                        "chance": {"type": "string", "description": "Bet type or market"},
+                                        "aposta": {"type": "string", "description": "Odds value"},
+                                        "lucro": {"type": "string", "description": "Profit value"}
+                                    },
+                                    "required": ["casa_aposta", "chance", "aposta", "lucro"]
+                                }
+                            }
+                        },
+                        "required": ["event_info", "betting_table"]
+                    }
+                }
+            }
+            
+            # Prepare request payload
+            payload = {
+                "model": "mistral-ocr-latest",
+                "document": {
+                    "type": "image_url",
+                    "image_url": f"data:image/png;base64,{base64_image}"
+                },
+                "document_annotation_format": betting_schema,
+                "include_image_base64": False
+            }
+            
+            # Headers for Mistral.ai API
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.mistral_api_key}"
+            }
+            
+            # Make API request
+            response = requests.post(self.mistral_endpoint, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            
+            # Parse response
+            ocr_result = response.json()
+            
+            print(f"Mistral.ai OCR response received", file=sys.stderr)
+            print(f"Processing successful", file=sys.stderr)
+            
+            return ocr_result
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Mistral.ai OCR API request failed: {e}", file=sys.stderr)
+            return self._fallback_ocr_response()
+        except Exception as e:
+            print(f"Mistral.ai OCR extraction error: {e}", file=sys.stderr)
+            return self._fallback_ocr_response()
+
     def extract_text_with_ocr_space(self, image_bytes: bytes) -> Dict[str, Any]:
         """Extract text using OCR.space API with native JSON response"""
         try:
-            if self.api_key is None:
+            if self.ocr_space_api_key is None:
                 return self._fallback_ocr_response()
             
             print("Using OCR.space API for text extraction...", file=sys.stderr)
             
             # OCR.space API parameters for JSON response
             payload = {
-                'apikey': self.api_key,
+                'apikey': self.ocr_space_api_key,
                 'language': 'por',  # Portuguese optimization
                 'isOverlayRequired': True,  # Get text coordinates  
                 'OCREngine': 2,  # Engine 2 for special characters
@@ -64,7 +155,7 @@ class BettingSlipOCR:
             }
             
             # Make API request - OCR.space returns native JSON
-            response = requests.post(self.endpoint, data=payload, files=files, timeout=30)
+            response = requests.post(self.ocr_space_endpoint, data=payload, files=files, timeout=30)
             response.raise_for_status()
             
             # OCR.space returns native JSON response
@@ -101,32 +192,60 @@ class BettingSlipOCR:
         }
 
     def analyze_betting_slip(self, base64_image: str) -> Dict[str, Any]:
-        """Main function to analyze betting slip using OCR.space native JSON"""
+        """Main function to analyze betting slip using Mistral.ai or OCR.space"""
         try:
-            print("Starting OCR.space betting slip analysis...", file=sys.stderr)
-            
-            # Decode image
-            image_bytes = self.decode_base64_image(base64_image)
-            print(f"Image size: {len(image_bytes)} bytes", file=sys.stderr)
-            
-            # Extract text using OCR.space native JSON API
-            ocr_result = self.extract_text_with_ocr_space(image_bytes)
-            
-            # Parse OCR.space native JSON result
-            parsed_result = self.parse_ocr_space_json(ocr_result)
-            
-            print(f"Final parsed result: {json.dumps(parsed_result, indent=2)}", file=sys.stderr)
-            
-            return {
-                'success': True,
-                'data': parsed_result,
-                'debug': {
-                    'ocr_exit_code': ocr_result.get('OCRExitCode'),
-                    'processing_time': ocr_result.get('ProcessingTimeInMilliseconds'),
-                    'error_message': ocr_result.get('ErrorMessage', []),
-                    'text_preview': ocr_result.get('ParsedResults', [{}])[0].get('ParsedText', '')[:500]
+            if self.primary_ocr == "mistral":
+                print("Starting Mistral.ai betting slip analysis...", file=sys.stderr)
+                
+                # Extract base64 string if needed
+                if 'base64,' in base64_image:
+                    base64_image = base64_image.split('base64,')[1]
+                
+                # Extract structured data using Mistral.ai OCR
+                ocr_result = self.extract_text_with_mistral_ocr(base64_image)
+                
+                # Parse Mistral.ai structured result
+                parsed_result = self.parse_mistral_structured_result(ocr_result)
+                
+                print(f"Final parsed result: {json.dumps(parsed_result, indent=2)}", file=sys.stderr)
+                
+                return {
+                    'success': True,
+                    'data': parsed_result,
+                    'debug': {
+                        'ocr_provider': 'mistral',
+                        'model': 'mistral-ocr-latest',
+                        'structured_extraction': True
+                    }
                 }
-            }
+            
+            else:
+                # Fallback to OCR.space
+                print("Starting OCR.space betting slip analysis...", file=sys.stderr)
+                
+                # Decode image
+                image_bytes = self.decode_base64_image(base64_image)
+                print(f"Image size: {len(image_bytes)} bytes", file=sys.stderr)
+                
+                # Extract text using OCR.space native JSON API
+                ocr_result = self.extract_text_with_ocr_space(image_bytes)
+                
+                # Parse OCR.space native JSON result
+                parsed_result = self.parse_ocr_space_json(ocr_result)
+                
+                print(f"Final parsed result: {json.dumps(parsed_result, indent=2)}", file=sys.stderr)
+                
+                return {
+                    'success': True,
+                    'data': parsed_result,
+                    'debug': {
+                        'ocr_provider': 'ocr_space',
+                        'ocr_exit_code': ocr_result.get('OCRExitCode'),
+                        'processing_time': ocr_result.get('ProcessingTimeInMilliseconds'),
+                        'error_message': ocr_result.get('ErrorMessage', []),
+                        'text_preview': ocr_result.get('ParsedResults', [{}])[0].get('ParsedText', '')[:500]
+                    }
+                }
             
         except Exception as e:
             print(f"Error in betting slip analysis: {e}", file=sys.stderr)
@@ -135,6 +254,146 @@ class BettingSlipOCR:
                 'error': str(e),
                 'data': self._get_default_result()
             }
+
+    def parse_mistral_structured_result(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse Mistral.ai structured OCR result into system format"""
+        
+        result = self._get_default_result()
+        
+        try:
+            # Check if Mistral.ai returned structured data
+            if 'annotations' in ocr_result and ocr_result['annotations']:
+                annotation_data = ocr_result['annotations'][0]
+                
+                print(f"Processing Mistral.ai structured data", file=sys.stderr)
+                print(f"Raw annotation: {json.dumps(annotation_data, indent=2)}", file=sys.stderr)
+                
+                # Extract event information
+                if 'event_info' in annotation_data:
+                    event_info = annotation_data['event_info']
+                    
+                    # Parse teams
+                    if 'teams' in event_info:
+                        teams_str = event_info['teams']
+                        if ' - ' in teams_str:
+                            team_a, team_b = teams_str.split(' - ', 1)
+                            result['betA']['teamA'] = team_a.strip()
+                            result['betA']['teamB'] = team_b.strip()
+                            result['betB']['teamA'] = team_a.strip()
+                            result['betB']['teamB'] = team_b.strip()
+                    
+                    # Extract sport and league
+                    if 'sport' in event_info:
+                        result['sport'] = event_info['sport']
+                    if 'league' in event_info:
+                        result['league'] = event_info['league']
+                    
+                    # Extract and format date/time in DD-MM-YYYY format
+                    if 'date' in event_info and 'time' in event_info:
+                        date_str = event_info['date']  # e.g., "2025-09-28"
+                        time_str = event_info['time']  # e.g., "12:30"
+                        
+                        try:
+                            # Convert YYYY-MM-DD to DD-MM-YYYY
+                            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                            formatted_date = date_obj.strftime('%d-%m-%Y')
+                            
+                            result['gameDate'] = date_str  # ISO for calendar
+                            result['gameTime'] = time_str
+                            result['gameDateFormatted'] = formatted_date  # DD-MM-YYYY for display
+                            result['gameDateTime'] = f"{formatted_date} {time_str}"  # Combined
+                            
+                            print(f"Date conversion: {date_str} -> {formatted_date}", file=sys.stderr)
+                        except ValueError as e:
+                            print(f"Date parsing failed: {e}", file=sys.stderr)
+                    
+                    # Extract profit percentage
+                    if 'profit_percentage' in event_info:
+                        result['totalProfitPercentage'] = event_info['profit_percentage']
+                
+                # Extract betting table data
+                if 'betting_table' in annotation_data:
+                    betting_table = annotation_data['betting_table']
+                    
+                    print(f"Found {len(betting_table)} betting entries in table", file=sys.stderr)
+                    
+                    # Map first bet to betA, second bet to betB
+                    if len(betting_table) >= 1:
+                        bet_data = betting_table[0]
+                        result['betA']['bettingHouse'] = bet_data.get('casa_aposta', '')
+                        result['betA']['betType'] = bet_data.get('chance', '')
+                        result['betA']['odds'] = bet_data.get('aposta', '0')
+                        result['betA']['profit'] = bet_data.get('lucro', '0')
+                        
+                    if len(betting_table) >= 2:
+                        bet_data = betting_table[1]
+                        result['betB']['bettingHouse'] = bet_data.get('casa_aposta', '')
+                        result['betB']['betType'] = bet_data.get('chance', '')
+                        result['betB']['odds'] = bet_data.get('aposta', '0')
+                        result['betB']['profit'] = bet_data.get('lucro', '0')
+                
+                print(f"Mistral.ai structured parsing successful", file=sys.stderr)
+                print(f"betA: {result['betA']['bettingHouse']} - Odds: {result['betA']['odds']}", file=sys.stderr)
+                print(f"betB: {result['betB']['bettingHouse']} - Odds: {result['betB']['odds']}", file=sys.stderr)
+                
+            else:
+                print("No structured annotations found in Mistral.ai response", file=sys.stderr)
+                
+                # Try to extract from markdown if available
+                if 'pages' in ocr_result and ocr_result['pages']:
+                    markdown_text = ocr_result['pages'][0].get('markdown', '')
+                    if markdown_text:
+                        print("Attempting to parse markdown content...", file=sys.stderr)
+                        result = self._parse_markdown_content(markdown_text, result)
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error processing Mistral.ai structured result: {e}", file=sys.stderr)
+            return self._get_default_result()
+
+    def _parse_markdown_content(self, markdown: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse markdown content as fallback when structured data is not available"""
+        
+        lines = markdown.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Extract teams
+            if ' - ' in line and 'Futebol' not in line and '|' not in line:
+                teams = line.split(' - ')
+                if len(teams) == 2:
+                    result['betA']['teamA'] = teams[0].strip()
+                    result['betA']['teamB'] = teams[1].strip()
+                    result['betB']['teamA'] = teams[0].strip()
+                    result['betB']['teamB'] = teams[1].strip()
+            
+            # Extract date patterns
+            date_match = re.search(r'(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})', line)
+            if date_match:
+                date_str = date_match.group(1)
+                time_str = date_match.group(2)
+                
+                try:
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    formatted_date = date_obj.strftime('%d-%m-%Y')
+                    
+                    result['gameDate'] = date_str
+                    result['gameTime'] = time_str
+                    result['gameDateFormatted'] = formatted_date
+                    result['gameDateTime'] = f"{formatted_date} {time_str}"
+                except ValueError:
+                    pass
+            
+            # Extract profit percentage
+            if re.search(r'\d+\.\d+%', line) and 'ROI' not in line:
+                percentage_match = re.search(r'(\d+\.\d+%)', line)
+                if percentage_match:
+                    result['totalProfitPercentage'] = percentage_match.group(1)
+        
+        print("Markdown fallback parsing completed", file=sys.stderr)
+        return result
 
     def parse_ocr_space_json(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
         """Parse OCR.space native JSON response using coordinate-based extraction"""
