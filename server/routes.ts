@@ -76,8 +76,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DOCTR AI OCR ENDPOINT: AI-powered OCR with PyTorch backend
-  // User explicitly requested DocTR over Tesseract alternatives
+  // PYTORCH OCR ENDPOINT: AI-powered OCR with PyTorch backend
+  // User explicitly requested PyTorch OCR over all other alternatives
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -94,19 +94,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // DOCTR AI SYSTEM - User's explicit preference
-        console.log('🤖 Starting DocTR AI OCR system (PyTorch + AI models)...');
+        // PYTORCH OCR SYSTEM - User's explicit preference
+        console.log('🤖 Starting PyTorch OCR system (PyTorch + AI models)...');
         
         const { spawn } = await import('child_process');
         const doctrResult = await new Promise((resolve, reject) => {
-          const child = spawn('python3', ['server/ocr_space_engine.py'], {
+          const child = spawn('python3', ['server/pytorch_ocr_engine.py'], {
             stdio: ['pipe', 'pipe', 'pipe']
           });
           
           // Timeout after 60 seconds
           const timeout = setTimeout(() => {
             child.kill('SIGTERM');
-            reject(new Error('DocTR AI timeout after 60 seconds'));
+            reject(new Error('PyTorch OCR timeout after 60 seconds'));
           }, 60000);
           
           let stdout = '';
@@ -124,7 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (stdout.trim()) {
                 const result = JSON.parse(stdout.trim());
                 // If we got valid JSON, that's success regardless of exit code
-                console.log(`📊 Got valid JSON from DocTR (exit code ${code})`);
+                console.log(`📊 Got valid JSON from PyTorch OCR (exit code ${code})`);
                 resolve(result);
                 return;
               }
@@ -133,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
             
             // Only reject if no valid JSON was found AND exit code indicates failure
-            reject(new Error(`DocTR AI failed - no valid output. Code: ${code}, Stderr: ${stderr.substring(0, 300)}`));
+            reject(new Error(`PyTorch OCR failed - no valid output. Code: ${code}, Stderr: ${stderr.substring(0, 300)}`));
           });
           
           child.on('error', (err: any) => {
@@ -143,18 +143,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Send JSON data to Python script
           child.stdin.write(JSON.stringify({ 
-            imageBase64,
-            apiKey: process.env.OCRSPACE_API_KEY
+            imageBase64
           }));
           child.stdin.end();
         });
 
         const processingTime = Date.now() - startTime;
-        console.log(`✅ DocTR AI OCR completed in ${processingTime}ms`);
+        console.log(`✅ PyTorch OCR completed in ${processingTime}ms`);
 
         if ((doctrResult as any).success) {
-          console.log('🎉 SUCCESS: DocTR AI extraction succeeded');
-          console.log('DEBUG: DOCTR_AI_SUCCESS', JSON.stringify({
+          console.log('🎉 SUCCESS: PyTorch OCR extraction succeeded');
+          console.log('DEBUG: PYTORCH_OCR_SUCCESS', JSON.stringify({
             method: (doctrResult as any).method,
             betA_house: (doctrResult as any).betA?.bettingHouse,
             betB_house: (doctrResult as any).betB?.bettingHouse,
@@ -163,8 +162,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             timestamp: new Date().toISOString()
           }));
         } else {
-          console.log('⚠️ DocTR AI could not extract data (this is normal for unclear images)');
-          console.log('DEBUG: DOCTR_AI_NO_DATA', JSON.stringify({
+          console.log('⚠️ PyTorch OCR could not extract data (this is normal for unclear images)');
+          console.log('DEBUG: PYTORCH_OCR_NO_DATA', JSON.stringify({
             method: (doctrResult as any).method,
             error: (doctrResult as any).error,
             processing_time_ms: processingTime,
@@ -172,14 +171,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }));
         }
         
-        // Always return the DocTR result, whether success or failure
+        // Always return the PyTorch OCR result, whether success or failure
         res.json(doctrResult as any);
         return;
         
       } catch (error: any) {
-        console.error('DocTR AI OCR error:', error);
+        console.error('PyTorch OCR error:', error);
         res.status(500).json({ 
-          error: 'DocTR AI OCR failed', 
+          error: 'PyTorch OCR failed', 
           details: error.message 
         });
       }
