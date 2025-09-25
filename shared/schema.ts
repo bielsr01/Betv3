@@ -30,7 +30,7 @@ export const bets = pgTable("bets", {
   teamA: text("team_a").notNull(), // First team
   teamB: text("team_b").notNull(), // Second team
   betType: text("bet_type").notNull(),
-  bettingHouseId: varchar("betting_house_id").references(() => bettingHouses.id), // Reference to betting house
+  bettingHouse: text("betting_house").notNull(), // Betting house name (temporary - matches current DB)
   odds: decimal("odds", { precision: 10, scale: 2 }).notNull(),
   stake: decimal("stake", { precision: 10, scale: 2 }).notNull(),
   payout: decimal("payout", { precision: 10, scale: 2 }).notNull(),
