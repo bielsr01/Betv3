@@ -1,0 +1,93 @@
+fiz umas pesquisas e encontrei uma solução de configuração para o tesserect
+reescreva todo o código tentando fazer configurações baseadas no modelo abaixo 
+
+Configuração e Extração de Dados com pytesseract.image_to_data
+Para extrair os dados de forma confiável de capturas de tela, vamos usar o pytesseract.image_to_data para obter a posição exata de cada palavra. O fluxo de trabalho será o seguinte:
+
+Execução do OCR com image_to_data: Converter a imagem em uma tabela de dados.
+
+Processamento Lógico: Iterar sobre essa tabela para encontrar os dados que você precisa, linha por linha.
+
+Extração com Regex: Usar expressões regulares para extrair os valores numéricos e de texto de cada linha.
+
+import pandas as pd
+import re
+import pytesseract
+from PIL import Image
+
+def extrair_dados_surebet(image_path):
+    """
+    Processa uma imagem de captura de tela, extrai dados de apostas
+    usando pytesseract.image_to_data e retorna um dicionário estruturado.
+    """
+    try:
+        # Etapa 1: Pré-processamento da imagem
+        img = Image.open(image_path)
+        img = img.convert('L') # Converte para tons de cinza
+        img = img.point(lambda x: 0 if x < 128 else 255) # Binarização
+
+        # Etapa 2: Execução do OCR e obtenção dos dados
+        # O output_type=pytesseract.Output.DATAFRAME retorna os dados em um formato tabular
+        dados_ocr = pytesseract.image_to_data(img, output_type=pytesseract.Output.DATAFRAME)
+
+        # Filtra linhas com texto reconhecido
+        dados_filtrados = dados_ocr[dados_ocr.conf > 60] # Confiança de 60% ou mais
+        
+        # Etapa 3: Agrupar palavras em linhas
+        linhas = {}
+        for _, row in dados_filtrados.iterrows():
+            if row['level'] == 5: # Level 5 indica uma palavra
+                # Usa a coordenada 'top' para agrupar palavras na mesma linha
+                y = row['top']
+                if y not in linhas:
+                    linhas[y] = []
+                linhas[y].append(row['text'])
+        
+        # Converte as linhas em strings
+        linhas_texto = [' '.join(linhas[y]) for y in sorted(linhas.keys())]
+
+        # Etapa 4: Extração com Regex e Pós-processamento
+        apostas = []
+        aposta_total = None
+        
+        # Padrão Regex para capturar dados de apostas individuais
+        # O uso de re.sub para limpar o texto de caracteres indesejados é útil.
+        padrao_aposta = r"([^\d]+)\s+(\d+\.\d+)\s+([\d.]+)\s+(USD|BRL)\s+([\d.]+)"
+        
+        for linha in linhas_texto:
+            linha_limpa = re.sub(r'[\s|()\[\]]', ' ', linha).strip()
+            
+            # Tenta encontrar o padrão de aposta individual
+            match = re.search(padrao_aposta, linha_limpa)
+            if match:
+                apostas.append({
+                    'casa_e_tipo': match.group(1).strip(),
+                    'odds': float(match.group(2)),
+                    'valor_aposta': float(match.group(3)),
+                    'moeda': match.group(4),
+                    'lucro': float(match.group(5))
+                })
+            
+            # Tenta encontrar a aposta total
+            match_total = re.search(r"Aposta total:\s+(\d+)", linha_limpa)
+            if match_total:
+                aposta_total = float(match_total.group(1))
+
+        return {
+            'apostas_detalhadas': apostas,
+            'aposta_total': aposta_total
+        }
+
+    except Exception as e:
+        print(f"Ocorreu um erro: {e}")
+        return None
+
+# Exemplo de uso
+# Crie um arquivo no Replit chamado 'app.py' e coloque o código acima.
+# Em seguida, você pode testar com um arquivo de imagem.
+# caminho_imagem = "nome_do_seu_print.png"
+# dados_extraidos = extrair_dados_surebet(caminho_imagem)
+# print(dados_extraidos)
+
+
+verifique esse modelo de configuração e aplique ao meu sistema garantindo que os dados da imagem sejam preenchidos corretamente de acordo com os dados atuais das apostas
