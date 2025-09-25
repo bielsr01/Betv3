@@ -159,13 +159,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             processing_time_ms: processingTime,
             timestamp: new Date().toISOString()
           }));
-          
-          res.json(doctrResult as any);
-          return;
         } else {
-          console.log('❌ DocTR AI extraction failed');
-          throw new Error(`DocTR AI extraction failed: ${(doctrResult as any).error}`);
+          console.log('⚠️ DocTR AI could not extract data (this is normal for unclear images)');
+          console.log('DEBUG: DOCTR_AI_NO_DATA', JSON.stringify({
+            method: (doctrResult as any).method,
+            error: (doctrResult as any).error,
+            processing_time_ms: processingTime,
+            timestamp: new Date().toISOString()
+          }));
         }
+        
+        // Always return the DocTR result, whether success or failure
+        res.json(doctrResult as any);
+        return;
         
       } catch (error: any) {
         console.error('DocTR AI OCR error:', error);

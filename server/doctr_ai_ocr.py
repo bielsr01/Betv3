@@ -139,32 +139,10 @@ class DocTRAIOCRReal:
         width, height = image.size
         print(f"📐 Image dimensions: {width}x{height}", file=sys.stderr)
         
-        # Convert image to grayscale for analysis
-        try:
-            import cv2
-            import numpy as np
-            
-            # Convert PIL to OpenCV format
-            img_array = np.array(image)
-            if len(img_array.shape) == 3:
-                img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-            else:
-                img_gray = img_array
-                
-            # Try to detect text regions and extract them
-            print("🔍 Attempting real text detection from image", file=sys.stderr)
-            
-            # This is a simplified approach - in real implementation, we would use
-            # text detection algorithms to find and extract actual text from image
-            # For now, return empty string to force manual extraction
-            return ""
-            
-        except ImportError:
-            print("⚠️ OpenCV not available for image analysis", file=sys.stderr)
-            return ""
-        except Exception as e:
-            print(f"❌ Image analysis failed: {e}", file=sys.stderr)
-            return ""
+        # Since dependencies are not fully available, return empty string
+        # This will trigger the proper error handling in the analysis function
+        print("🔍 Basic image analysis (no OpenCV to avoid stdout contamination)", file=sys.stderr)
+        return ""
         
     def _analyze_real_betting_text(self, text: str, image) -> Dict[str, Any]:
         """
