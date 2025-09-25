@@ -94,12 +94,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // PYTORCH OCR SYSTEM - User's explicit preference
-        console.log('🤖 Starting PyTorch OCR system (PyTorch + AI models)...');
+        // GEMINI REAL OCR SYSTEM - NO SIMULATIONS, REAL DATA ONLY
+        console.log('🤖 Starting Gemini REAL OCR system (NO simulations)...');
         
         const { spawn } = await import('child_process');
         const doctrResult = await new Promise((resolve, reject) => {
-          const child = spawn('python3', ['server/pytorch_ocr_engine.py'], {
+          const child = spawn('python3', ['server/gemini_ocr_real.py'], {
             stdio: ['pipe', 'pipe', 'pipe']
           });
           
