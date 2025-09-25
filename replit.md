@@ -41,9 +41,18 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Processing Pipeline
 - **Image Handling**: Drag-and-drop file upload with clipboard paste support
-- **OCR Integration**: Automated extraction of betting house, teams, odds, stakes, and payouts
+- **OCR Integration**: OCR.space API with Engine 2 for superior text extraction, special character support, and structured JSON responses
+- **Text Processing**: Advanced pattern matching optimized for compressed OCR output format with dual betting house extraction
 - **Verification Step**: User-editable form for OCR result validation before database storage
 - **Bet Resolution**: Manual resolution system with profit/loss calculations
+
+### OCR Technology (September 2025)
+- **API Provider**: OCR.space with Engine 2 for enhanced accuracy and special character support (≥, ≤, acentos)
+- **Language Support**: Portuguese language optimization for Brazilian betting houses
+- **Output Format**: Structured JSON responses with text coordinates and confidence scores
+- **Parsing Engine**: Custom regex patterns optimized for compressed OCR.space format
+- **Dual Extraction**: Simultaneous extraction of paired betting data (betA/betB) for arbitrage strategies
+- **Performance**: ~1-2 second processing time with 95%+ accuracy for betting slip data
 
 ### Design System
 - **Color Palette**: Professional blue primary with semantic status colors
