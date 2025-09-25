@@ -316,23 +316,25 @@ class BettingSlipOCR:
         # 1. Extract teams and percentage from actual OCR data
         full_text = ' '.join(all_text_lines)
         
-        # Extract teams (Lille - Lyon) - look for the specific pattern in text
-        team_match = re.search(r'Lille\s*-\s*Lyon', full_text)
-        if team_match:
-            result['betA']['teamA'] = 'Lille'
-            result['betA']['teamB'] = 'Lyon'
-            result['betB']['teamA'] = 'Lille'
-            result['betB']['teamB'] = 'Lyon'
-            print(f"Teams extracted: Lille vs Lyon", file=sys.stderr)
-        else:
-            # General pattern for any teams
-            general_team_match = re.search(r'([A-Za-zÀ-ÿ]{3,})\s*-\s*([A-Za-zÀ-ÿ]{3,})', full_text)
-            if general_team_match and 'SureBet' not in general_team_match.group(0):
-                result['betA']['teamA'] = general_team_match.group(1)
-                result['betA']['teamB'] = general_team_match.group(2)
-                result['betB']['teamA'] = general_team_match.group(1)
-                result['betB']['teamB'] = general_team_match.group(2)
-                print(f"Teams extracted: {general_team_match.group(1)} vs {general_team_match.group(2)}", file=sys.stderr)
+        # Extract teams - more flexible pattern
+        team_patterns = [
+            # Pattern for "Atlantic Owls da Florida - Memphis"  
+            r'([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*(?:\s+da\s+[A-Za-zÀ-ÿ]+)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)',
+            # Pattern for "Lille - Lyon"
+            r'([A-Za-zÀ-ÿ]{3,})\s*-\s*([A-Za-zÀ-ÿ]{3,})'
+        ]
+        
+        for pattern in team_patterns:
+            team_match = re.search(pattern, full_text)
+            if team_match and not any(word in team_match.group(0) for word in ['SureBet', 'Google', 'Chrome', 'BR']):
+                teamA = team_match.group(1).strip()
+                teamB = team_match.group(2).strip()
+                result['betA']['teamA'] = teamA
+                result['betA']['teamB'] = teamB
+                result['betB']['teamA'] = teamA
+                result['betB']['teamB'] = teamB
+                print(f"Teams extracted: {teamA} vs {teamB}", file=sys.stderr)
+                break
         
         # Extract percentage (2.50%)
         perc_match = re.search(r'(\d+\.\d+)\s*%(?!\s*ROI)', full_text)
@@ -347,12 +349,28 @@ class BettingSlipOCR:
             result['gameTime'] = date_match.group(2)
             print(f"Date/time extracted: {date_match.group(1)} {date_match.group(2)}", file=sys.stderr)
         
-        # 3. Extract league/sport (França - Ligue 1)
-        league_match = re.search(r'(França)\s*-\s*(Ligue\s*\d+)', full_text)
-        if league_match:
-            result['league'] = f"{league_match.group(1)} - {league_match.group(2)}"
+        # 3. Extract league/sport - more flexible patterns
+        # First try to identify sport
+        if 'americano' in full_text.lower():
+            result['sport'] = 'Futebol Americano'
+        elif 'futebol' in full_text.lower():
             result['sport'] = 'Futebol'
-            print(f"League extracted: {result['league']}", file=sys.stderr)
+        elif 'basketball' in full_text.lower() or 'basquete' in full_text.lower():
+            result['sport'] = 'Basketball'
+        
+        # Then extract league information
+        league_patterns = [
+            r'(USA)\s*-\s*(College)',  # USA - College
+            r'(França)\s*-\s*(Ligue\s*\d+)',  # França - Ligue 1
+            r'([A-Za-zÀ-ÿ]+)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+\d+)?)'  # General pattern
+        ]
+        
+        for pattern in league_patterns:
+            league_match = re.search(pattern, full_text)
+            if league_match and not any(word in league_match.group(0) for word in ['SureBet', 'Google', 'Chrome']):
+                result['league'] = f"{league_match.group(1)} - {league_match.group(2)}"
+                print(f"League extracted: {result['league']}", file=sys.stderr)
+                break
         
         # 4. Extract betting data using both text and table structure
         betting_data = self._extract_betting_data(text_data, table_data)
@@ -458,7 +476,7 @@ class BettingSlipOCR:
             row_text = ' '.join([item['text'] for item in row_texts])
             print(f"Row {row_index}: {row_text}", file=sys.stderr)
             
-            # Enhanced patterns for betting data (optimized for current image format)
+            # Enhanced patterns for betting data - more flexible and accurate
             betting_patterns = [
                 # Betnacional pattern: "Betnacional (BR) H1(+0.5) - escanteios 1.830 56.01 USD 2.50"
                 {
@@ -473,21 +491,23 @@ class BettingSlipOCR:
                     'bet_type': '2 - escanteios'
                 },
                 # Betfast pattern: "Betfast Acima 19.5 2° o período 2.200 159 USD 7.66"
+                # Fixed: odds=2.200, stake=159, profit=7.66 (not threshold=19.5)
                 {
                     'house': 'Betfast',
-                    'pattern': r'betfast.*?acima.*?(\d+\.\d+).*?período.*?(\d+\.\d+).*?(\d+).*?usd.*?(\d+\.\d+)',
+                    'pattern': r'betfast\s+acima\s+[\d.]+.*?período\s+(\d+\.\d+).*?(\d+(?:\.\d+)?)\s+usd.*?(\d+\.\d+)',
                     'bet_type': 'Acima'
                 },
-                # Blaze pattern: "Blaze (BR) Abaixo 19.5 2º o período 1.910 183.14 USD 7.66"
+                # Blaze pattern: "Blaze (BR) Abaixo 19.5 2º o período 1.910 183.14 USD 7.66"  
+                # Fixed: odds=1.910, stake=183.14, profit=7.66 (not threshold=19.5)
                 {
                     'house': 'Blaze',
-                    'pattern': r'blaze.*?abaixo.*?(\d+\.\d+).*?período.*?(\d+\.\d+).*?(\d+\.\d+).*?usd.*?(\d+\.\d+)',
+                    'pattern': r'blaze.*?abaixo\s+[\d.]+.*?período\s+(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
                     'bet_type': 'Abaixo'
                 },
-                # Generic pattern for any betting house
+                # Generic pattern for any betting house with (BR)
                 {
                     'house': 'Generic',
-                    'pattern': r'(\w+).*?(?:br|BR).*?(\d+\.\d+).*?(\d+\.\d+).*?usd.*?(\d+\.\d+)',
+                    'pattern': r'(\w+)\s*\([^)]*BR[^)]*\).*?(\d+\.\d+).*?(\d+\.\d+)\s+usd.*?(\d+\.\d+)',
                     'bet_type': 'Aposta'
                 }
             ]
