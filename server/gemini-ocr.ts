@@ -32,7 +32,7 @@ Extract the following data:
 - Sport and league
 - Both betting lines with: betting house, bet type, odds, stake amount, and profit
 - Game date and time
-- Total profit percentage
+- Total profit percentage (the percentage shown in the top right, e.g. "1.59%", "2.25%")
 
 Return ONLY valid JSON in this exact format:
 {
@@ -58,7 +58,7 @@ Return ONLY valid JSON in this exact format:
   "gameTime": "HH:MM",
   "sport": "sport name",
   "league": "league name",
-  "totalProfitPercentage": "percentage"
+  "totalProfitPercentage": "percentage with % symbol (e.g. 2.25%)"
 }
 
 Important:

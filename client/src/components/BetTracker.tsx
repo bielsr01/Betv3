@@ -298,6 +298,9 @@ const convertGeminiToOCRFormat = (geminiData: any): OCRData => {
   const betBPayout = geminiData.betB.stake && geminiData.betB.odds ? 
     (parseFloat(geminiData.betB.stake) * parseFloat(geminiData.betB.odds)).toFixed(2) : '0';
 
+  // Clean percentage value - remove % symbol if present
+  const cleanPercentage = (geminiData.totalProfitPercentage || '0').replace('%', '');
+
   return {
     betA: {
       bettingHouse: geminiData.betA.bettingHouse || '',
@@ -325,7 +328,7 @@ const convertGeminiToOCRFormat = (geminiData: any): OCRData => {
     gameTime: geminiData.gameTime || '00:00',
     sport: geminiData.sport || '',
     league: geminiData.league || '',
-    totalProfitPercentage: geminiData.totalProfitPercentage || '0'
+    totalProfitPercentage: cleanPercentage
   };
 };
 
