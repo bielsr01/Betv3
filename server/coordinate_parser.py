@@ -143,6 +143,61 @@ def parse_teams_from_title(lines: List[Dict]) -> Tuple[str, str]:
     
     return "", ""
 
+def extract_betting_house_dynamic(text: str) -> Optional[str]:
+    """Extract betting house name using hybrid approach: known houses + dynamic detection"""
+    if not text:
+        return None
+    
+    # PHASE 1: Check known betting houses first (most reliable)
+    known_houses = [
+        'KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Betano', 'Sportingbet', 'BravoBet', 'Blaze', 
+        'Aposta1', 'Betnacional', 'SuperBet', 'VBet', 'MarjoSports', 'Betfast', '1xBet', 
+        'Rivalo', 'Betsson', 'LeoVegas', 'Betway', 'William Hill', 'Unibet', 'PokerStars',
+        'Bwin', 'Paddy Power', 'Ladbrokes', 'SkyBet', 'Coral', 'Betfair', 'BetVictor',
+        'ComeOn', 'NetBet', 'MrGreen', 'Bethard', 'Dafabet', '888sport', 'Marathonbet',
+        'Betstars', 'Interwetten', 'Titanbet', 'RedBet', 'NordicBet'
+    ]
+    
+    for house in known_houses:
+        # Case insensitive check with word boundaries
+        if re.search(rf'\b{re.escape(house)}\b', text, re.IGNORECASE):
+            return house
+    
+    # PHASE 2: Dynamic detection with strict criteria
+    # Pattern: Name followed by (BR), (UK), (Country code), etc. followed by betting data
+    house_pattern = r'([A-Za-z0-9]+(?:[A-Za-z0-9\s&._-]*[A-Za-z0-9])?)\s*\([A-Z0-9]{2,3}\)'
+    
+    match = re.search(house_pattern, text)
+    if match:
+        house_name = match.group(1).strip()
+        
+        # Filter out false positives more aggressively
+        false_positives = {
+            'USD', 'BRL', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK',
+            'Futebol', 'Football', 'Basquete', 'Basketball', 'Tenis', 'Tennis',
+            'Brasil', 'Brazil', 'Serie', 'Liga', 'Premier', 'Championship',
+            'Chance', 'Aposta', 'Lucro', 'Evento', 'Total', 'Mostrar'
+        }
+        
+        # Additional filters for team names and common words
+        team_patterns = [
+            r'^[A-Z][\w-]+-[A-Z]{2}$',  # Pattern like "Novorizontino-SP"
+            r'^\w+\s+\w+$'               # Two word combinations that might be teams
+        ]
+        
+        if (house_name.upper() not in [fp.upper() for fp in false_positives] and 
+            not any(re.match(pattern, house_name) for pattern in team_patterns) and
+            len(house_name) >= 3 and len(house_name) <= 20):
+            
+            # Must be followed by betting context (odds, stakes, profit indicators)
+            remaining_text = text[match.end():match.end()+100]
+            betting_indicators = [r'\d+\.\d+', r'\d+[.,]\d+', 'USD', 'BRL', 'EUR']
+            
+            if any(re.search(pattern, remaining_text) for pattern in betting_indicators):
+                return house_name
+    
+    return None
+
 def parse_sport_league_near_teams(lines: List[Dict], teams_line_index: int) -> Tuple[str, str]:
     """Parse sport and league from lines near the teams line"""
     # Check a wider range around the teams line
@@ -164,19 +219,14 @@ def parse_sport_league_near_teams(lines: List[Dict], teams_line_index: int) -> T
 def group_bet_lines(lines: List[Dict]) -> List[Dict]:
     """Group betting house lines with adjacent lines for complete bet information"""
     betting_groups = []
-    house_names = ['KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Betano', 'Sportingbet', 'BravoBet', 'Blaze', 'Aposta1', 'Betnacional', 'SuperBet', 'VBet', 'MarjoSports', 'Betfast']
     
     i = 0
     while i < len(lines):
         line = lines[i]
         full_text = line.get('full_text', '')
         
-        # Check if this line contains a betting house
-        house_found = None
-        for house in house_names:
-            if house in full_text:
-                house_found = house
-                break
+        # Dynamically identify betting house from text using pattern
+        house_found = extract_betting_house_dynamic(full_text)
         
         if house_found:
             # Create a group starting with the house line
@@ -198,7 +248,7 @@ def group_bet_lines(lines: List[Dict]) -> List[Dict]:
                 prev_top = min(block.get('top', 0) for block in prev_line.get('blocks', [{'top': 0}]))
                 
                 # Don't combine if previous line contains another betting house
-                has_house = any(house in prev_text for house in house_names)
+                has_house = extract_betting_house_dynamic(prev_text) is not None
                 if not has_house and abs(prev_top - main_top) <= 25:
                     group['all_lines'].insert(0, prev_line)
                     group['combined_text'] = prev_text + ' ' + group['combined_text']
@@ -210,7 +260,7 @@ def group_bet_lines(lines: List[Dict]) -> List[Dict]:
                 next_top = min(block.get('top', 0) for block in next_line.get('blocks', [{'top': 0}]))
                 
                 # Don't combine if next line contains another betting house
-                has_house = any(house in next_text for house in house_names)
+                has_house = extract_betting_house_dynamic(next_text) is not None
                 if not has_house and abs(next_top - main_top) <= 25:
                     group['all_lines'].append(next_line)
                     group['combined_text'] += ' ' + next_text
@@ -232,18 +282,26 @@ def extract_bet_type_from_group(combined_text: str) -> str:
     bet_patterns = [
         # DNB patterns: "1 / DNB 1° o período", "1/ DNB 1° periodo"
         r'(\d+\s*/?\s*DNB\s+\d+[°º]?\s*(?:o\s*)?per[íi]odo)',
-        # Handicap patterns: "H2(0) 1º o período", "H1(-1) 2° período" 
-        r'(H[12]\([^)]*\)\s+\d+[°º]?\s*(?:o\s*)?per[íi]odo)',
+        # Handicap patterns: "H2(0) 1º o período", "H1(-1) 2° período", "H2(0) 1º 0 periodo"
+        r'(H[12]\([^)]*\)\s+\d+[°º]?\s*(?:\d+\s*)?(?:o\s*)?per[íi]odo)',
         # Over/Under with período: "Acima 2.5 1º período"
         r'((?:Acima|Abaixo|Over|Under)\s+\d+[.,]?\d*\s+\d+[°º]?\s*per[íi]odo)',
-        # 1X2 patterns: "1X2", "1*2", "2*1"
-        r'(\d+[X\*]\d+)',
-        # General Over/Under: "Over 2.5", "Acima 1.5"
+        # Asian Handicap patterns: "AH 0.5", "Asian Handicap -1", "AH(+1.5)"
+        r'((?:AH|Asian\s+Handicap)\s*\(?[+-]?\d+[.,]?\d*\)?)',
+        # 1X2 patterns: "1X2", "1*2", "2*1", "1 / DNB"
+        r'(\d+\s*/\s*(?:DNB|X|[\d*]))',
+        # General handicap without period: "H1(+1)", "H2(-0.5)"
+        r'(H[12]\([^)]*\))',
+        # General Over/Under: "Over 2.5", "Acima 1.5", "Abaixo 10.5"
         r'((?:Acima|Abaixo|Over|Under)\s+\d+[.,]?\d*)',
-        # Match result: "Resultado Final"
-        r'(Resultado\s+Final)',
+        # Match result: "Resultado Final", "Full Time Result"
+        r'(Resultado\s+Final|Full\s+Time\s+Result)',
         # Double chance: "Dupla Chance"
         r'(Dupla\s+Chance)',
+        # Both teams to score: "Ambas Marcam", "BTTS"
+        r'(Ambas\s+Marcam|BTTS)',
+        # Corner betting: "Escanteios", "Corners"
+        r'(\d+\s*[-–—]\s*(?:escanteios|corners))',
     ]
     
     for pattern in bet_patterns:
@@ -251,15 +309,19 @@ def extract_bet_type_from_group(combined_text: str) -> str:
         if match:
             return match.group(1).strip()
     
-    # Fallback: extract text between house name and first large number
-    house_match = re.search(r'(?:KTO|Pinnacle|Bet365|Betfair|Betano|BravoBet|Blaze|Aposta1|Betnacional|SuperBet|VBet|MarjoSports|Betfast)\s*\([^)]*\)\s*([^0-9]+?)(?:\d+\.\d+|\d{3,})', text, re.IGNORECASE)
-    if house_match:
-        bet_type = house_match.group(1).strip()
-        # Clean common symbols
-        bet_type = re.sub(r'[&@#\[\]/]', '', bet_type)
-        bet_type = ' '.join(bet_type.split())
-        if len(bet_type) > 2:
-            return bet_type[:50]
+    # Fallback: extract text between any betting house pattern and first large number
+    # Get any potential house name from the text first
+    potential_house = extract_betting_house_dynamic(text)
+    if potential_house:
+        # Create dynamic pattern for this specific house
+        house_match = re.search(rf'{re.escape(potential_house)}\s*\([^)]*\)\s*([^0-9]+?)(?:\d+\.\d+|\d{{3,}})', text, re.IGNORECASE)
+        if house_match:
+            bet_type = house_match.group(1).strip()
+            # Clean common symbols
+            bet_type = re.sub(r'[&@#\[\]/]', '', bet_type)
+            bet_type = ' '.join(bet_type.split())
+            if len(bet_type) > 2:
+                return bet_type[:50]
     
     return ""
 
