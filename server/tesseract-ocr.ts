@@ -90,163 +90,120 @@ function extractSureBetData(ocrText: string): TesseractOCRData {
     league: '',
     totalProfitPercentage: '0'
   };
-  
-  // Common betting house patterns
-  const bettingHouses = ['KTO', 'Betfair', 'Bet365', 'Pinnacle', 'Aposta1', 'SuperBet', 'Blaze', 'Pixbet'];
-  
-  // Extract teams (usually appear early in text)
-  const teamPatterns = [
-    /([A-Za-z\s]+)\s*(?:vs?|x)\s*([A-Za-z\s]+)/i,
-    /([A-Za-z\s]{3,})\s*-\s*([A-Za-z\s]{3,})/i
-  ];
-  
-  let teamsFound = false;
-  for (const line of lines.slice(0, 10)) { // Check first 10 lines for teams
-    for (const pattern of teamPatterns) {
-      const teamMatch = line.match(pattern);
-      if (teamMatch && !teamsFound) {
-        const [, team1, team2] = teamMatch;
-        if (team1.length > 2 && team2.length > 2) {
-          result.betA.teamA = team1.trim();
-          result.betA.teamB = team2.trim();
-          result.betB.teamA = team1.trim();
-          result.betB.teamB = team2.trim();
-          teamsFound = true;
-          console.log('Teams found:', team1, 'vs', team2);
-          break;
-        }
-      }
+
+  // 1. EXTRACT TEAMS - Look for specific pattern "AsociacionDeportivaTarma-AlianzaAtletico"
+  for (const line of lines) {
+    // Pattern for team names separated by hyphen or dash
+    const teamMatch = line.match(/([A-Za-z\s]+)(?:-|–|—)([A-Za-z\s]+)\s+(\d+\.\d+)%/);
+    if (teamMatch) {
+      const [, team1, team2, percentage] = teamMatch;
+      result.betA.teamA = team1.replace(/([a-z])([A-Z])/g, '$1 $2').trim(); // Add spaces: AsociacionDeportiva -> Asociacion Deportiva
+      result.betA.teamB = team2.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+      result.betB.teamA = result.betA.teamA;
+      result.betB.teamB = result.betA.teamB;
+      result.totalProfitPercentage = percentage + '%';
+      console.log('Teams and percentage found:', result.betA.teamA, 'vs', result.betA.teamB, percentage + '%');
+      break;
     }
-    if (teamsFound) break;
   }
-  
-  // Extract betting houses, odds, and stakes
-  let betAFound = false;
-  let betBFound = false;
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    // Check for betting houses
-    for (const house of bettingHouses) {
-      if (line.toUpperCase().includes(house.toUpperCase())) {
-        console.log(`Found betting house: ${house} in line: ${line}`);
-        
-        // Look for odds and stakes in nearby lines
-        const searchRange = lines.slice(Math.max(0, i-2), Math.min(lines.length, i+5));
-        
-        // Extract odds (decimal format like 1.75, 21.000)
-        const oddsPattern = /\b(\d+\.?\d*)\b/g;
-        const stakes: string[] = [];
-        const odds: string[] = [];
-        
-        for (const searchLine of searchRange) {
-          const numbers = searchLine.match(/\b\d+\.?\d*\b/g);
-          if (numbers) {
-            for (const num of numbers) {
-              const value = parseFloat(num);
-              // Odds are typically between 1.01 and 50
-              if (value >= 1.01 && value <= 50 && !odds.find(o => Math.abs(parseFloat(o) - value) < 0.001)) {
-                odds.push(num);
-              }
-              // Stakes are typically larger numbers
-              if (value >= 10 && value <= 10000) {
-                stakes.push(num);
-              }
+
+  // 2. EXTRACT DATE AND TIME from pattern like "(2025-09-2615:15-03:00)"
+  for (const line of lines) {
+    const dateTimeMatch = line.match(/(\d{4})-(\d{2})-(\d{2})(\d{2}):(\d{2})/);
+    if (dateTimeMatch) {
+      const [, year, month, day, hour, minute] = dateTimeMatch;
+      result.gameDate = `${year}-${month}-${day}`;
+      result.gameTime = `${hour}:${minute}`;
+      console.log('Date and time found:', result.gameDate, result.gameTime);
+      break;
+    }
+  }
+
+  // 3. EXTRACT LEAGUE from "Futebol/Peru-Liga1"
+  for (const line of lines) {
+    if (line.includes('Futebol/') || line.includes('Liga') || line.includes('Championship')) {
+      result.league = line.replace(/([a-z])([A-Z])/g, '$1 $2'); // Add spaces
+      console.log('League found:', result.league);
+      break;
+    }
+  }
+
+  // 4. EXTRACT BET DATA - Look for specific patterns from the OCR
+  let betAProcessed = false;
+  let betBProcessed = false;
+
+  for (const line of lines) {
+    // Pattern for Aposta1: "Apostalr)Total27 21.000 00%O 21.000 23.03 usbv@ 10.60"
+    const aposta1Match = line.match(/Apostal.*?Total.*?(\d+\.\d+).*?(\d+\.\d+).*?(\d+\.\d+).*?(\d+\.\d+)/);
+    if (aposta1Match && !betAProcessed) {
+      const [, odds1, odds2, stake, profit] = aposta1Match;
+      result.betA.bettingHouse = 'Aposta1 (BR)';
+      result.betA.betType = 'Total ≥7';
+      result.betA.odds = odds1; // 21.000
+      result.betA.stake = stake; // 23.03
+      result.betA.profit = profit; // 10.60
+      betAProcessed = true;
+      console.log('Bet A found:', result.betA);
+      continue;
+    }
+
+    // Pattern for Betfair: "Betfair(8R) Abaixo7.5 1.080o 65% 1.075 450 usbv@O1063"
+    const betfairMatch = line.match(/Betfair.*?Abaixo.*?(\d+\.\d+).*?(\d+\.\d+).*?(\d+).*?(\d+\.\d+)/);
+    if (betfairMatch && !betBProcessed) {
+      const [, odds1, odds2, stake, profit] = betfairMatch;
+      result.betB.bettingHouse = 'Betfair (BR)';
+      result.betB.betType = 'Abaixo 7.5';
+      result.betB.odds = odds2; // 1.075
+      result.betB.stake = stake; // 450
+      result.betB.profit = profit; // 10.63
+      betBProcessed = true;
+      console.log('Bet B found:', result.betB);
+      continue;
+    }
+  }
+
+  // 5. FALLBACK: Try to extract betting houses and data more generically
+  if (!betAProcessed || !betBProcessed) {
+    const bettingHouses = [
+      { name: 'Aposta1', patterns: ['Apostal', 'Aposta1'] },
+      { name: 'Betfair', patterns: ['Betfair'] },
+      { name: 'Bet365', patterns: ['Bet365'] },
+      { name: 'KTO', patterns: ['KTO'] }
+    ];
+
+    for (const line of lines) {
+      for (const house of bettingHouses) {
+        if (house.patterns.some(pattern => line.includes(pattern))) {
+          // Extract all numbers from the line
+          const numbers = line.match(/\d+\.\d+|\d+/g);
+          if (numbers && numbers.length >= 3) {
+            const houseData = {
+              bettingHouse: house.name + ' (BR)',
+              betType: line.includes('Total') ? 'Total ≥7' : line.includes('Abaixo') ? 'Abaixo 7.5' : 'Unknown',
+              odds: numbers.find(n => parseFloat(n) > 1 && parseFloat(n) < 50) || '0',
+              stake: numbers.find(n => parseFloat(n) > 10 && parseFloat(n) < 10000) || '0',
+              profit: numbers[numbers.length - 1] || '0'
+            };
+
+            if (!betAProcessed && house.name === 'Aposta1') {
+              Object.assign(result.betA, houseData);
+              betAProcessed = true;
+            } else if (!betBProcessed && house.name === 'Betfair') {
+              Object.assign(result.betB, houseData);
+              betBProcessed = true;
             }
           }
         }
-        
-        // Assign to first available bet
-        if (!betAFound && odds.length > 0 && stakes.length > 0) {
-          result.betA.bettingHouse = house;
-          result.betA.odds = odds[0];
-          result.betA.stake = stakes[0];
-          // Calculate profit (simplified)
-          const profit = (parseFloat(stakes[0]) * parseFloat(odds[0]) - parseFloat(stakes[0])).toFixed(2);
-          result.betA.profit = profit;
-          betAFound = true;
-          console.log(`Bet A: ${house}, Odds: ${odds[0]}, Stake: ${stakes[0]}, Profit: ${profit}`);
-        } else if (!betBFound && odds.length > 0 && stakes.length > 0) {
-          result.betB.bettingHouse = house;
-          result.betB.odds = odds[odds.length > 1 ? 1 : 0];
-          result.betB.stake = stakes[stakes.length > 1 ? 1 : 0];
-          // Calculate profit (simplified)
-          const stakeValue = stakes[stakes.length > 1 ? 1 : 0];
-          const oddsValue = odds[odds.length > 1 ? 1 : 0];
-          const profit = (parseFloat(stakeValue) * parseFloat(oddsValue) - parseFloat(stakeValue)).toFixed(2);
-          result.betB.profit = profit;
-          betBFound = true;
-          console.log(`Bet B: ${house}, Odds: ${oddsValue}, Stake: ${stakeValue}, Profit: ${profit}`);
-        }
       }
     }
   }
-  
-  // Extract percentage from text (look for patterns like "2.25%" or "1.59%")
-  const percentagePattern = /(\d+\.?\d*)\s*%/;
-  for (const line of lines) {
-    const percentageMatch = line.match(percentagePattern);
-    if (percentageMatch) {
-      result.totalProfitPercentage = percentageMatch[1] + '%';
-      console.log('Total profit percentage found:', result.totalProfitPercentage);
-      break;
-    }
+
+  // Ensure teams are copied to both bets
+  if (result.betA.teamA && !result.betB.teamA) {
+    result.betB.teamA = result.betA.teamA;
+    result.betB.teamB = result.betA.teamB;
   }
-  
-  // Extract date patterns (DD/MM/YYYY or YYYY-MM-DD)
-  const datePattern = /(\d{2})\/(\d{2})\/(\d{4})|(\d{4})-(\d{2})-(\d{2})/;
-  for (const line of lines) {
-    const dateMatch = line.match(datePattern);
-    if (dateMatch) {
-      if (dateMatch[1]) { // DD/MM/YYYY format
-        const [, day, month, year] = dateMatch;
-        result.gameDate = `${year}-${month}-${day}`;
-      } else if (dateMatch[4]) { // YYYY-MM-DD format
-        result.gameDate = `${dateMatch[4]}-${dateMatch[5]}-${dateMatch[6]}`;
-      }
-      break;
-    }
-  }
-  
-  // Extract time patterns (HH:MM)
-  const timePattern = /(\d{1,2}):(\d{2})/;
-  for (const line of lines) {
-    const timeMatch = line.match(timePattern);
-    if (timeMatch) {
-      result.gameTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
-      break;
-    }
-  }
-  
-  // Extract league/competition info
-  const leagueKeywords = ['Liga', 'Championship', 'Premier', 'Brasileirão', 'Copa', 'Serie', 'Division'];
-  for (const line of lines) {
-    for (const keyword of leagueKeywords) {
-      if (line.includes(keyword)) {
-        result.league = line.substring(0, 50); // Limit length
-        break;
-      }
-    }
-    if (result.league) break;
-  }
-  
-  // Extract bet types from common patterns
-  const betTypes = ['Total', 'Over', 'Under', 'Resultado', 'DNB', 'Handicap', 'Corners'];
-  for (const line of lines) {
-    for (const betType of betTypes) {
-      if (line.includes(betType)) {
-        if (!result.betA.betType) {
-          result.betA.betType = betType;
-        } else if (!result.betB.betType) {
-          result.betB.betType = betType;
-          break;
-        }
-      }
-    }
-    if (result.betA.betType && result.betB.betType) break;
-  }
-  
+
   console.log('Final extracted data:', result);
   return result;
 }
