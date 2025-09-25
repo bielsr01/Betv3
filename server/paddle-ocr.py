@@ -137,7 +137,7 @@ class BettingSlipOCR:
             }
 
     def parse_ocr_space_json(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse OCR.space native JSON response"""
+        """Parse OCR.space native JSON response using coordinate-based extraction"""
         
         result = self._get_default_result()
         
@@ -151,15 +151,169 @@ class BettingSlipOCR:
             print("No parsed results in OCR.space response", file=sys.stderr)
             return result
         
-        # Get main text content
+        # Get main text content and overlay
         main_result = parsed_results[0]
-        parsed_text = main_result.get('ParsedText', '')
         text_overlay = main_result.get('TextOverlay', {})
         
-        print(f"OCR.space extracted text: {parsed_text[:1000]}...", file=sys.stderr)
+        print(f"Using coordinate-based extraction...", file=sys.stderr)
         
-        # Extract structured data
-        result = self._extract_betting_data_from_ocr_text(parsed_text, text_overlay)
+        # Use coordinate-based extraction (user's solution)
+        result = self._extract_betting_data_coordinate_based(ocr_result)
+        
+        return result
+
+    def _extract_betting_data_coordinate_based(self, json_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract betting data using coordinate-based parsing (user's solution)"""
+        
+        try:
+            lines = json_data['ParsedResults'][0]['TextOverlay']['Lines']
+            print(f"Processing {len(lines)} lines with coordinate-based parser", file=sys.stderr)
+            
+            # 1. Extract general event data
+            resultados_gerais = {}
+            
+            for line in lines:
+                text = line['LineText']
+                
+                # Find Date and Time
+                data_hora_match = re.search(r'(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})', text)
+                if data_hora_match:
+                    resultados_gerais['Data e Horário do Jogo'] = data_hora_match.group(1)
+
+                # Find Teams
+                times_match = re.search(r'(.+) - (.+)', text)
+                if times_match and 'Futebol' not in text and 'Liga' not in text:
+                    resultados_gerais['Time A'] = times_match.group(1).strip()
+                    resultados_gerais['Time B'] = times_match.group(2).strip()
+                    
+                # Find Sport and League
+                esporte_liga_match = re.search(r'(.+)/(.+) / (.+)', text)
+                if esporte_liga_match:
+                    resultados_gerais['Esporte'] = esporte_liga_match.group(1).strip()
+                    resultados_gerais['Liga'] = esporte_liga_match.group(2).strip() + ' / ' + esporte_liga_match.group(3).strip()
+                # Special case for two-part format
+                elif '/' in text and '-' in text:
+                    partes = text.split('/')
+                    resultados_gerais['Esporte'] = partes[0].strip()
+                    liga_partes = partes[1].split('-')
+                    resultados_gerais['Liga'] = liga_partes[0].strip() + ' - ' + liga_partes[1].strip()
+
+                # Find Total Profit %
+                if re.search(r'\d+\.\d+%', text) and "ROI:" not in text:
+                    percentage_match = re.search(r'(\d+\.\d+%)', text)
+                    if percentage_match:
+                        resultados_gerais['Lucro Total em %'] = percentage_match.group(1)
+                        
+            # 2. Extract table data using coordinates
+            headers = {}
+            for line in lines:
+                if line['LineText'] in ["Chance", "Aposta", "Lucro"]:
+                    if 'Words' in line and line['Words']:
+                        headers[line['LineText']] = line['Words'][0]['Left']
+                        
+            if not headers:
+                print("Table headers not found with coordinate method", file=sys.stderr)
+                return self._get_default_result()
+            
+            print(f"Found headers: {headers}", file=sys.stderr)
+            
+            # Find Y coordinates (vertical) of betting lines
+            linhas_de_aposta_y = []
+            for line in lines:
+                if 'Words' not in line or not line['Words']:
+                    continue
+                for word in line['Words']:
+                    if "Chance" in headers and abs(word['Left'] - headers["Chance"]) < 50:
+                        linhas_de_aposta_y.append(line['Words'][0]['Top'])
+                        break
+
+            dados_apostas = []
+            for y_aposta in sorted(list(set(linhas_de_aposta_y))):
+                dados_da_aposta = {}
+                dados_da_aposta["Casa de Aposta"] = "Não encontrado"
+
+                for line in lines:
+                    if 'Words' not in line or not line['Words']:
+                        continue
+
+                    word_top = line['Words'][0]['Top']
+                    if abs(word_top - y_aposta) < 10:
+                        word_left = line['Words'][0]['Left']
+                        word_text = line['LineText'].strip().replace("•", "")
+                        
+                        if word_left < headers["Chance"]:
+                            dados_da_aposta["Casa de Aposta"] = word_text
+                        elif abs(word_left - headers["Chance"]) < 50:
+                            dados_da_aposta["Tipo de Aposta"] = word_text
+                        elif "Aposta" in headers and abs(word_left - headers["Aposta"]) < 50:
+                            dados_da_aposta["Odd"] = word_text
+                        elif "Lucro" in headers and abs(word_left - headers["Lucro"]) < 50:
+                            dados_da_aposta["Lucro da Aposta"] = word_text
+                
+                if len(dados_da_aposta) > 1:
+                    dados_apostas.append(dados_da_aposta)
+
+            print(f"Extracted {len(dados_apostas)} betting entries", file=sys.stderr)
+            
+            # 3. Map to current system format (betA/betB)
+            result = self._map_coordinate_data_to_system_format(resultados_gerais, dados_apostas)
+            
+            return result
+            
+        except Exception as e:
+            print(f"Coordinate-based extraction failed: {e}", file=sys.stderr)
+            return self._get_default_result()
+
+    def _map_coordinate_data_to_system_format(self, general_data: Dict, betting_data: List[Dict]) -> Dict[str, Any]:
+        """Map coordinate-extracted data to current system format"""
+        
+        result = self._get_default_result()
+        
+        # Map general data
+        if 'Time A' in general_data:
+            result['betA']['teamA'] = general_data['Time A']
+            result['betB']['teamA'] = general_data['Time A']
+        if 'Time B' in general_data:
+            result['betA']['teamB'] = general_data['Time B']
+            result['betB']['teamB'] = general_data['Time B']
+        if 'Esporte' in general_data:
+            result['sport'] = general_data['Esporte']
+        if 'Liga' in general_data:
+            result['league'] = general_data['Liga']
+        if 'Data e Horário do Jogo' in general_data:
+            date_time = general_data['Data e Horário do Jogo'].split(' ')
+            if len(date_time) >= 2:
+                result['gameDate'] = date_time[0]
+                result['gameTime'] = date_time[1]
+        if 'Lucro Total em %' in general_data:
+            result['totalProfitPercentage'] = general_data['Lucro Total em %']
+        
+        # Map betting data (first bet -> betA, second bet -> betB)
+        if len(betting_data) >= 1:
+            bet_data = betting_data[0]
+            if 'Casa de Aposta' in bet_data:
+                result['betA']['bettingHouse'] = bet_data['Casa de Aposta']
+            if 'Tipo de Aposta' in bet_data:
+                result['betA']['betType'] = bet_data['Tipo de Aposta']
+            if 'Odd' in bet_data:
+                result['betA']['odds'] = bet_data['Odd']
+            if 'Lucro da Aposta' in bet_data:
+                result['betA']['profit'] = bet_data['Lucro da Aposta']
+                
+        if len(betting_data) >= 2:
+            bet_data = betting_data[1]
+            if 'Casa de Aposta' in bet_data:
+                result['betB']['bettingHouse'] = bet_data['Casa de Aposta']
+            if 'Tipo de Aposta' in bet_data:
+                result['betB']['betType'] = bet_data['Tipo de Aposta']
+            if 'Odd' in bet_data:
+                result['betB']['odds'] = bet_data['Odd']
+            if 'Lucro da Aposta' in bet_data:
+                result['betB']['profit'] = bet_data['Lucro da Aposta']
+        
+        print(f"Mapped coordinate data to system format", file=sys.stderr)
+        print(f"betA: {result['betA']['bettingHouse']} - {result['betA']['betType']}", file=sys.stderr)
+        print(f"betB: {result['betB']['bettingHouse']} - {result['betB']['betType']}", file=sys.stderr)
         
         return result
 
