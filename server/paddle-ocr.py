@@ -160,33 +160,7 @@ class SemanticBettingSlipOCR:
                         candidates.append(FieldCandidate(team_b, "team_b", f"line: {line}", 0.9))
                         print(f"Teams found: {team_a} vs {team_b}", file=sys.stderr)
             
-            # Find odds (decimal numbers > 1.0)
-            odds_pattern = r'(\d+[,\.]\d{2,3})'
-            odds_matches = re.findall(odds_pattern, line)
-            for odds in odds_matches:
-                odds_clean = odds.replace(',', '.')
-                try:
-                    odds_value = float(odds_clean)
-                    if 1.01 <= odds_value <= 50.0:  # Valid odds range
-                        candidates.append(FieldCandidate(odds_clean, "odds", f"line: {line}", 0.8))
-                        print(f"Odds found: {odds_clean}", file=sys.stderr)
-                except ValueError:
-                    pass
-            
-            # Find stakes/payouts (monetary values)
-            money_pattern = r'R\$?\s*(\d+[,\.]\d{2})'
-            money_matches = re.findall(money_pattern, line)
-            for money in money_matches:
-                money_clean = money.replace(',', '.')
-                try:
-                    money_value = float(money_clean)
-                    if 1.0 <= money_value <= 100000.0:  # Valid money range
-                        candidates.append(FieldCandidate(money_clean, "monetary", f"line: {line}", 0.7))
-                        print(f"Money found: {money_clean}", file=sys.stderr)
-                except ValueError:
-                    pass
-            
-            # Find profit percentages
+            # Find profit percentages FIRST (to avoid confusing with odds)
             profit_pattern = r'(\d+[,\.]\d+)%'
             profit_matches = re.findall(profit_pattern, line)
             for profit in profit_matches:
@@ -195,10 +169,57 @@ class SemanticBettingSlipOCR:
                     try:
                         profit_value = float(profit_clean)
                         if 0.1 <= profit_value <= 20.0:  # Valid profit range
-                            candidates.append(FieldCandidate(f"{profit_clean}%", "profit", f"line: {line}", 0.8))
+                            candidates.append(FieldCandidate(f"{profit_clean}%", "profit", f"line: {line}", 0.9))
                             print(f"Profit found: {profit_clean}%", file=sys.stderr)
                     except ValueError:
                         pass
+            
+            # Find odds (decimal numbers > 1.0) - exclude if already found as profit
+            if not any('%' in line for match in profit_matches):  # Only look for odds if no % in line
+                odds_pattern = r'(\d+[,\.]\d{2,3})'
+                odds_matches = re.findall(odds_pattern, line)
+                for odds in odds_matches:
+                    odds_clean = odds.replace(',', '.')
+                    try:
+                        odds_value = float(odds_clean)
+                        if 1.01 <= odds_value <= 50.0:  # Valid odds range
+                            candidates.append(FieldCandidate(odds_clean, "odds", f"line: {line}", 0.8))
+                            print(f"Odds found: {odds_clean}", file=sys.stderr)
+                    except ValueError:
+                        pass
+            
+            # Find stakes/payouts (monetary values) - improved patterns
+            money_patterns = [
+                r'R\$\s*(\d+[,\.]\d{1,2})',  # R$ 123.45
+                r'(\d+[,\.]\d{1,2})\s*R\$',  # 123.45 R$
+                r'(\d+[,\.]\d{2,3})\s*(?=\s|$)',  # Standalone numbers with 2-3 decimals
+            ]
+            
+            for pattern in money_patterns:
+                money_matches = re.findall(pattern, line)
+                for money in money_matches:
+                    money_clean = money.replace(',', '.')
+                    try:
+                        money_value = float(money_clean)
+                        if 1.0 <= money_value <= 100000.0:  # Valid money range
+                            candidates.append(FieldCandidate(money_clean, "monetary", f"line: {line}", 0.7))
+                            print(f"Money found: {money_clean}", file=sys.stderr)
+                    except ValueError:
+                        pass
+            
+            # Find bet types (1, 2, X, 1X, 2X, Over, Under, etc.)
+            bet_type_patterns = [
+                r'\b(1¹⁻²|2¹⁻²|1X²|X2²|Over|Under|1|2|X)\b',
+                r'(Vitória\s+\w+|Empate|Derrota\s+\w+)',
+                r'(Home|Away|Draw)'
+            ]
+            
+            for pattern in bet_type_patterns:
+                bet_matches = re.findall(pattern, line, re.IGNORECASE)
+                for bet_type in bet_matches:
+                    if len(bet_type.strip()) >= 1:
+                        candidates.append(FieldCandidate(bet_type.strip(), "bet_type", f"line: {line}", 0.8))
+                        print(f"Bet type found: {bet_type.strip()}", file=sys.stderr)
             
             # Find betting houses (words ending with common suffixes)
             house_pattern = r'([\w\s]{3,}(?:Bet|bet|BET)[\w]*)'
@@ -317,15 +338,24 @@ class SemanticBettingSlipOCR:
             result['betB']['teamA'] = team_a.value
             result['betB']['teamB'] = team_b.value
         
-        # Odds - take two highest confidence odds
+        # Odds - take two different highest confidence odds
         if 'odds' in by_type:
             odds_sorted = sorted(by_type['odds'], key=lambda c: c.confidence, reverse=True)
-            if len(odds_sorted) >= 2:
-                result['betA']['odds'] = odds_sorted[0].value
-                result['betB']['odds'] = odds_sorted[1].value
-            elif len(odds_sorted) == 1:
-                result['betA']['odds'] = odds_sorted[0].value
-                result['betB']['odds'] = odds_sorted[0].value
+            # Get unique odds values to avoid duplicates
+            unique_odds = []
+            seen_values = set()
+            for odds in odds_sorted:
+                if odds.value not in seen_values:
+                    unique_odds.append(odds)
+                    seen_values.add(odds.value)
+            
+            if len(unique_odds) >= 2:
+                result['betA']['odds'] = unique_odds[0].value
+                result['betB']['odds'] = unique_odds[1].value
+                print(f"Using different odds: {unique_odds[0].value} and {unique_odds[1].value}", file=sys.stderr)
+            elif len(unique_odds) == 1:
+                result['betA']['odds'] = unique_odds[0].value
+                result['betB']['odds'] = unique_odds[0].value
         
         # Stakes/Payouts - distribute monetary values
         if 'monetary' in by_type:
@@ -344,15 +374,44 @@ class SemanticBettingSlipOCR:
             profit = max(by_type['profit'], key=lambda c: c.confidence)
             result['totalProfitPercentage'] = profit.value
         
+        # Bet Types - distribute different bet types
+        if 'bet_type' in by_type:
+            bet_types_sorted = sorted(by_type['bet_type'], key=lambda c: c.confidence, reverse=True)
+            # Get unique bet types to avoid duplicates
+            unique_bet_types = []
+            seen_types = set()
+            for bet_type in bet_types_sorted:
+                if bet_type.value not in seen_types:
+                    unique_bet_types.append(bet_type)
+                    seen_types.add(bet_type.value)
+            
+            if len(unique_bet_types) >= 2:
+                result['betA']['betType'] = unique_bet_types[0].value
+                result['betB']['betType'] = unique_bet_types[1].value
+                print(f"Using different bet types: {unique_bet_types[0].value} and {unique_bet_types[1].value}", file=sys.stderr)
+            elif len(unique_bet_types) == 1:
+                result['betA']['betType'] = unique_bet_types[0].value
+                result['betB']['betType'] = unique_bet_types[0].value
+        
         # Betting houses
         if 'betting_house' in by_type:
             houses_sorted = sorted(by_type['betting_house'], key=lambda c: c.confidence, reverse=True)
-            if len(houses_sorted) >= 2:
-                result['betA']['bettingHouse'] = houses_sorted[0].value
-                result['betB']['bettingHouse'] = houses_sorted[1].value
-            elif len(houses_sorted) == 1:
-                result['betA']['bettingHouse'] = houses_sorted[0].value
-                result['betB']['bettingHouse'] = houses_sorted[0].value
+            # Get unique betting houses
+            unique_houses = []
+            seen_houses = set()
+            for house in houses_sorted:
+                house_clean = house.value.lower()
+                if house_clean not in seen_houses:
+                    unique_houses.append(house)
+                    seen_houses.add(house_clean)
+            
+            if len(unique_houses) >= 2:
+                result['betA']['bettingHouse'] = unique_houses[0].value
+                result['betB']['bettingHouse'] = unique_houses[1].value
+                print(f"Using different betting houses: {unique_houses[0].value} and {unique_houses[1].value}", file=sys.stderr)
+            elif len(unique_houses) == 1:
+                result['betA']['bettingHouse'] = unique_houses[0].value
+                result['betB']['bettingHouse'] = unique_houses[0].value
         
         # Sport
         if 'sport' in by_type:
