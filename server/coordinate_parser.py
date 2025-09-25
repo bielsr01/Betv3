@@ -263,7 +263,48 @@ def extract_betting_house_from_layout(text: str) -> Optional[str]:
     if not has_strong_context:
         return None
     
-    return house_name
+    # Final validation with proximity scoring for robustness
+    if proximity_score_validation(text, house_name):
+        return house_name
+    else:
+        return None
+
+def proximity_score_validation(text: str, house_name: str) -> bool:
+    """Validate house name using proximity scoring with financial/anchor tokens"""
+    if not text or not house_name:
+        return False
+    
+    # Find house position in text
+    house_match = re.search(rf'\b{re.escape(house_name)}\b', text, re.IGNORECASE)
+    if not house_match:
+        return False
+    
+    house_end = house_match.end()
+    
+    # Check for financial tokens within reasonable distance (next 100 chars)
+    financial_text = text[house_end:house_end + 100]
+    financial_indicators = [
+        r'\b\d+\.\d{2,3}\b',  # Odds like 1.400, 3.740
+        r'\b\d{2,}[.,]?\d*\b',  # Stakes like 72.76, 27.24
+        r'\b(?:USD|BRL|EUR|usd)\b',  # Currency indicators
+    ]
+    
+    financial_score = sum(1 for pattern in financial_indicators 
+                         if re.search(pattern, financial_text, re.IGNORECASE))
+    
+    # Check for betting type anchors within reasonable distance (prev 50 + next 50 chars)
+    anchor_text = text[max(0, house_match.start() - 50):house_end + 50]
+    anchor_patterns = [
+        r'\b(?:H[12]|DNB|1[º°]?\s*per[íi]odo|2[º°]?\s*per[íi]odo)\b',
+        r'\b(?:Over|Under|Handicap|1X2|1\s*/\s*DNB)\b',
+        r'\([+-]?\d+[.,]?\d*\)',  # Handicap values
+    ]
+    
+    anchor_score = sum(1 for pattern in anchor_patterns 
+                      if re.search(pattern, anchor_text, re.IGNORECASE))
+    
+    # Require either strong financial context OR betting anchor context
+    return financial_score >= 1 or anchor_score >= 1
 
 def extract_house_from_prefix(text_prefix: str) -> Optional[str]:
     """Extract house name from text prefix (text before betting type anchor)"""

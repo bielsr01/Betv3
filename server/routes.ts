@@ -97,32 +97,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // PRIMARY: Use coordinate-based parser for accurate field mapping
+        // UNIFIED PIPELINE: Use ONLY coordinate-based parser for 100% consistency
+        console.log('Starting unified coordinate-based OCR processing...');
         const { analyzeImageWithCoordinateParser } = await import('./local-ocr');
         const result = await analyzeImageWithCoordinateParser(imageBase64);
         
         const processingTime = Date.now() - startTime;
         console.log(`Coordinate parser processing completed in ${processingTime}ms`);
         
+        // Structured debug trace for observability and troubleshooting
+        console.log('DEBUG: OCR_SUCCESS', JSON.stringify({
+          method: 'coordinate_parser_unified',
+          houses_detected: [result.betA?.bettingHouse, result.betB?.bettingHouse],
+          teams: [result.betA?.teamA, result.betA?.teamB],
+          odds: [result.betA?.odds, result.betB?.odds],
+          stakes: [result.betA?.stake, result.betB?.stake],
+          bet_types: [result.betA?.betType, result.betB?.betType],
+          date: result.gameDate,
+          sport: result.sport,
+          league: result.league,
+          total_profit: result.totalProfitPercentage,
+          processing_time_ms: processingTime,
+          timestamp: new Date().toISOString()
+        }));
+        
         res.json({
           ...result,
-          processingTime: `${processingTime}ms`
-        });
-      } catch (coordinateError) {
-        console.error('Coordinate parser failed, falling back to legacy parser:', coordinateError);
-        
-        // FALLBACK: Use legacy OCR parser if coordinate parser fails
-        const { analyzeSureBetImageLocal } = await import('./local-ocr');
-        const fallbackResult = await analyzeSureBetImageLocal(imageBase64);
-        
-        const processingTime = Date.now() - startTime;
-        console.log(`Fallback OCR processing completed in ${processingTime}ms`);
-        
-        res.json({
-          ...fallbackResult,
           processingTime: `${processingTime}ms`,
-          note: 'Used fallback parser due to coordinate parser failure'
+          method: 'unified_coordinate_parser'
         });
+      } catch (coordinateError: any) {
+        console.error('ERROR: Unified coordinate parser failed - REQUIRES INVESTIGATION');
+        
+        // Structured error trace for debugging
+        console.log('DEBUG: OCR_FAILED', JSON.stringify({
+          method: 'coordinate_parser_unified',
+          error_message: coordinateError?.message || 'Unknown error',
+          error_stack: coordinateError?.stack?.substring(0, 500) || 'No stack trace',
+          processing_time_ms: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          image_size_bytes: imageBase64.length
+        }));
+        
+        // NO FALLBACK - Unified pipeline for guaranteed consistency
+        // Any failure must be investigated and fixed in the coordinate parser
+        throw new Error(`Unified OCR pipeline failed - coordinate parser error: ${coordinateError?.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('OCR analysis error:', error);
