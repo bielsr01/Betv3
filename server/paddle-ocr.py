@@ -366,9 +366,9 @@ class BettingSlipOCR:
                 'pattern': r'(betnacional)\s*\(br\)(.*?escanteios)(\d+\.\d+)(\d+\.\d+)usd\s*v?\s*(\d+\.\d+)',
                 'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
             },
-            # KTO: "KTO (BR)2 - escanteios2.330 •43.99USD V2.50"
+            # KTO flexible: "KTO (BR)2 - escanteios2.330 •43.99USD V2.50"
             {
-                'pattern': r'(kto)\s*\(br\)(.*?escanteios)(\d+\.\d+)\s*[•·]?\s*(\d+\.\d+)usd\s*v?\s*(\d+\.\d+)',
+                'pattern': r'(kto)\s*\(br\)\s*(.*?)(?=\d+\.\d+)(\d+\.\d+)\s*[•·\u2022\u00b7]?\s*(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
                 'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
             },
             # Blaze: "Blaze (BR) Abaixo 3.5 - cartões 2º o time R 1.340 · 75.81 USD v 1.59"
