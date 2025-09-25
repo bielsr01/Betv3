@@ -175,121 +175,191 @@ class BettingSlipOCR:
         
         return result
 
+    def extrair_dados_dinamicos(self, json_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract betting data using the user's original working function"""
+        
+        lines = json_data['ParsedResults'][0]['TextOverlay']['Lines']
+
+        # 1. Extract general event data
+        resultados_gerais = {}
+        
+        for line in lines:
+            text = line['LineText']
+            
+            # Find and format Date and Time
+            data_hora_match = re.search(r'(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2})', text)
+            if data_hora_match:
+                data_original = data_hora_match.group(1)
+                hora_original = data_hora_match.group(2)
+                
+                data_objeto = datetime.strptime(data_original, '%Y-%m-%d')
+                data_formatada_br = data_objeto.strftime('%d-%m-%Y')
+                
+                resultados_gerais['Data e Horário do Jogo'] = f"{data_formatada_br} {hora_original}"
+
+            # Find Teams
+            times_match = re.search(r'(.+) - (.+)', text)
+            if times_match and 'Futebol' not in text and 'Liga' not in text:
+                resultados_gerais['Time A'] = times_match.group(1).strip()
+                resultados_gerais['Time B'] = times_match.group(2).strip()
+                
+            # Find Sport and League
+            esporte_liga_match = re.search(r'(.+)/(.+) / (.+)', text)
+            if esporte_liga_match:
+                resultados_gerais['Esporte'] = esporte_liga_match.group(1).strip()
+                resultados_gerais['Liga'] = esporte_liga_match.group(2).strip() + ' / ' + esporte_liga_match.group(3).strip()
+            elif '/' in text and '-' in text:
+                partes = text.split('/')
+                resultados_gerais['Esporte'] = partes[0].strip()
+                liga_partes = partes[1].split('-')
+                resultados_gerais['Liga'] = liga_partes[0].strip() + ' - ' + liga_partes[1].strip()
+
+            # Find Total Profit %
+            if re.search(r'\d+\.\d+%', text) and "ROI:" not in text:
+                percentage_match = re.search(r'(\d+\.\d+%)', text)
+                if percentage_match:
+                    resultados_gerais['Lucro Total em %'] = percentage_match.group(1)
+                
+        # 2. Extract table data
+        headers = {}
+        for line in lines:
+            if line['LineText'] in ["Chance", "Aposta", "Lucro"]:
+                headers[line['LineText']] = line['Words'][0]['Left']
+                
+        if not headers:
+            return {"erro": "Cabeçalhos da tabela não encontrados."}
+        
+        linhas_de_aposta_y = []
+        for line in lines:
+            for word in line['Words']:
+                if "Chance" in headers and abs(word['Left'] - headers["Chance"]) < 50:
+                    linhas_de_aposta_y.append(line['Words'][0]['Top'])
+                    break
+
+        dados_apostas = []
+        for y_aposta in sorted(list(set(linhas_de_aposta_y))):
+            dados_da_aposta = {}
+            dados_da_aposta["Casa de Aposta"] = "Não encontrado"
+
+            for line in lines:
+                if 'Words' not in line or not line['Words']:
+                    continue
+
+                word_top = line['Words'][0]['Top']
+                if abs(word_top - y_aposta) < 10:
+                    word_left = line['Words'][0]['Left']
+                    word_text = line['LineText'].strip().replace("•", "")
+                    
+                    if word_left < headers["Chance"]:
+                        dados_da_aposta["Casa de Aposta"] = word_text
+                    elif abs(word_left - headers["Chance"]) < 50:
+                        dados_da_aposta["Tipo de Aposta"] = word_text
+                    elif "Aposta" in headers and abs(word_left - headers["Aposta"]) < 50:
+                        dados_da_aposta["Odd"] = word_text
+                    elif "Lucro" in headers and abs(word_left - headers["Lucro"]) < 50:
+                        dados_da_aposta["Lucro da Aposta"] = word_text
+            
+            if len(dados_da_aposta) > 1:
+                dados_apostas.append(dados_da_aposta)
+
+        resultados_finais = {**resultados_gerais, "Apostas": dados_apostas}
+        return resultados_finais
+
     def _extract_betting_data_coordinate_based(self, json_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract betting data using coordinate-based parsing with DD-MM-YYYY date formatting (user's enhanced solution)"""
+        """Extract betting data using coordinate-based parsing - wrapper for user's original function"""
         
         try:
-            lines = json_data['ParsedResults'][0]['TextOverlay']['Lines']
-            print(f"Processing {len(lines)} lines with enhanced coordinate-based parser", file=sys.stderr)
+            print(f"Using user's original extrair_dados_dinamicos function", file=sys.stderr)
             
-            # 1. Extract general event data with proper date formatting
-            resultados_gerais = {}
+            # Call the user's original working function
+            user_result = self.extrair_dados_dinamicos(json_data)
             
-            for line in lines:
-                text = line['LineText']
-                
-                # Find and format Date and Time - DD-MM-YYYY format
-                data_hora_match = re.search(r'(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2})', text)
-                if data_hora_match:
-                    data_original = data_hora_match.group(1)
-                    hora_original = data_hora_match.group(2)
-                    
-                    # Convert YYYY-MM-DD to DD-MM-YYYY format
-                    data_objeto = datetime.strptime(data_original, '%Y-%m-%d')
-                    data_formatada_br = data_objeto.strftime('%d-%m-%Y')
-                    
-                    resultados_gerais['Data e Horário do Jogo'] = f"{data_formatada_br} {hora_original}"
-                    resultados_gerais['Data Original ISO'] = data_original  # Keep ISO for calendar
-                    resultados_gerais['Hora Original'] = hora_original
-
-                # Find Teams
-                times_match = re.search(r'(.+) - (.+)', text)
-                if times_match and 'Futebol' not in text and 'Liga' not in text:
-                    resultados_gerais['Time A'] = times_match.group(1).strip()
-                    resultados_gerais['Time B'] = times_match.group(2).strip()
-                    
-                # Find Sport and League
-                esporte_liga_match = re.search(r'(.+)/(.+) / (.+)', text)
-                if esporte_liga_match:
-                    resultados_gerais['Esporte'] = esporte_liga_match.group(1).strip()
-                    resultados_gerais['Liga'] = esporte_liga_match.group(2).strip() + ' / ' + esporte_liga_match.group(3).strip()
-                elif '/' in text and '-' in text:
-                    partes = text.split('/')
-                    if len(partes) >= 2:
-                        resultados_gerais['Esporte'] = partes[0].strip()
-                        liga_partes = partes[1].split('-')
-                        if len(liga_partes) >= 2:
-                            resultados_gerais['Liga'] = liga_partes[0].strip() + ' - ' + liga_partes[1].strip()
-
-                # Find Total Profit %
-                if re.search(r'\d+\.\d+%', text) and "ROI:" not in text:
-                    percentage_match = re.search(r'(\d+\.\d+%)', text)
-                    if percentage_match:
-                        resultados_gerais['Lucro Total em %'] = percentage_match.group(1)
-                        
-            # 2. Extract table data using coordinates with better error handling
-            headers = {}
-            for line in lines:
-                if line['LineText'] in ["Chance", "Aposta", "Lucro"]:
-                    if 'Words' in line and line['Words'] and len(line['Words']) > 0:
-                        headers[line['LineText']] = line['Words'][0]['Left']
-                        
-            if not headers:
-                print("Table headers not found with coordinate method", file=sys.stderr)
-                # Continue processing for general data extraction
-            else:
-                print(f"Found headers: {headers}", file=sys.stderr)
+            if "erro" in user_result:
+                print(f"User's function returned error: {user_result['erro']}", file=sys.stderr)
+                return self._get_default_result()
             
-            # Find Y coordinates (vertical) of betting lines with safety checks
-            linhas_de_aposta_y = []
-            if headers and "Chance" in headers:
-                for line in lines:
-                    if 'Words' not in line or not line['Words']:
-                        continue
-                    for word in line['Words']:
-                        if abs(word['Left'] - headers["Chance"]) < 50:
-                            if line['Words'] and len(line['Words']) > 0:
-                                linhas_de_aposta_y.append(line['Words'][0]['Top'])
-                            break
-
-            dados_apostas = []
-            if headers:
-                for y_aposta in sorted(list(set(linhas_de_aposta_y))):
-                    dados_da_aposta = {}
-                    dados_da_aposta["Casa de Aposta"] = "Não encontrado"
-
-                    for line in lines:
-                        if 'Words' not in line or not line['Words']:
-                            continue
-
-                        if len(line['Words']) > 0:
-                            word_top = line['Words'][0]['Top']
-                            if abs(word_top - y_aposta) < 10:
-                                word_left = line['Words'][0]['Left']
-                                word_text = line['LineText'].strip().replace("•", "")
-                                
-                                if word_left < headers.get("Chance", float('inf')):
-                                    dados_da_aposta["Casa de Aposta"] = word_text
-                                elif "Chance" in headers and abs(word_left - headers["Chance"]) < 50:
-                                    dados_da_aposta["Tipo de Aposta"] = word_text
-                                elif "Aposta" in headers and abs(word_left - headers["Aposta"]) < 50:
-                                    dados_da_aposta["Odd"] = word_text
-                                elif "Lucro" in headers and abs(word_left - headers["Lucro"]) < 50:
-                                    dados_da_aposta["Lucro da Aposta"] = word_text
-                    
-                    if len(dados_da_aposta) > 1:
-                        dados_apostas.append(dados_da_aposta)
-
-            print(f"Extracted {len(dados_apostas)} betting entries", file=sys.stderr)
+            print(f"User's function extracted: {len(user_result.get('Apostas', []))} betting entries", file=sys.stderr)
             
-            # 3. Map to current system format (betA/betB) with formatted dates
-            result = self._map_coordinate_data_to_system_format(resultados_gerais, dados_apostas)
+            # Map the user's result format to our system format
+            result = self._map_user_format_to_system_format(user_result)
             
             return result
             
         except Exception as e:
-            print(f"Enhanced coordinate-based extraction failed: {e}", file=sys.stderr)
+            print(f"User's coordinate-based extraction failed: {e}", file=sys.stderr)
             return self._get_default_result()
+
+    def _map_user_format_to_system_format(self, user_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Map the user's original function output format to our system format"""
+        
+        result = self._get_default_result()
+        
+        # Map general event data
+        if 'Time A' in user_result:
+            result['betA']['teamA'] = user_result['Time A']
+            result['betB']['teamA'] = user_result['Time A']
+        if 'Time B' in user_result:
+            result['betA']['teamB'] = user_result['Time B']
+            result['betB']['teamB'] = user_result['Time B']
+        if 'Esporte' in user_result:
+            result['sport'] = user_result['Esporte']
+        if 'Liga' in user_result:
+            result['league'] = user_result['Liga']
+        if 'Lucro Total em %' in user_result:
+            result['totalProfitPercentage'] = user_result['Lucro Total em %']
+        
+        # Handle date/time - preserve user's DD-MM-YYYY formatting
+        if 'Data e Horário do Jogo' in user_result:
+            # Extract the formatted date and time from the combined string
+            date_time_str = user_result['Data e Horário do Jogo']  # e.g., "28-09-2025 12:30"
+            
+            # Split the formatted date/time string
+            if ' ' in date_time_str:
+                date_part, time_part = date_time_str.split(' ', 1)
+                
+                # Convert DD-MM-YYYY back to YYYY-MM-DD for ISO date (calendar needs this)
+                try:
+                    date_obj = datetime.strptime(date_part, '%d-%m-%Y')
+                    iso_date = date_obj.strftime('%Y-%m-%d')
+                    
+                    result['gameDate'] = iso_date  # ISO format for calendar
+                    result['gameTime'] = time_part  # Time component
+                    result['gameDateFormatted'] = date_part  # DD-MM-YYYY for display
+                    result['gameDateTime'] = date_time_str  # Combined DD-MM-YYYY HH:MM for display
+                    
+                    print(f"Date mapping: '{date_time_str}' -> ISO: '{iso_date}', Formatted: '{date_part}'", file=sys.stderr)
+                except ValueError as e:
+                    print(f"Date conversion failed for '{date_time_str}': {e}", file=sys.stderr)
+        
+        # Map betting data (first bet -> betA, second bet -> betB)
+        apostas = user_result.get('Apostas', [])
+        if len(apostas) >= 1:
+            bet_data = apostas[0]
+            if 'Casa de Aposta' in bet_data:
+                result['betA']['bettingHouse'] = bet_data['Casa de Aposta']
+            if 'Tipo de Aposta' in bet_data:
+                result['betA']['betType'] = bet_data['Tipo de Aposta']
+            if 'Odd' in bet_data:
+                result['betA']['odds'] = bet_data['Odd']
+            if 'Lucro da Aposta' in bet_data:
+                result['betA']['profit'] = bet_data['Lucro da Aposta']
+                
+        if len(apostas) >= 2:
+            bet_data = apostas[1]
+            if 'Casa de Aposta' in bet_data:
+                result['betB']['bettingHouse'] = bet_data['Casa de Aposta']
+            if 'Tipo de Aposta' in bet_data:
+                result['betB']['betType'] = bet_data['Tipo de Aposta']
+            if 'Odd' in bet_data:
+                result['betB']['odds'] = bet_data['Odd']
+            if 'Lucro da Aposta' in bet_data:
+                result['betB']['profit'] = bet_data['Lucro da Aposta']
+        
+        print(f"Mapped user format to system format successfully", file=sys.stderr)
+        print(f"betA: {result['betA']['bettingHouse']} - Odds: {result['betA']['odds']}", file=sys.stderr)
+        print(f"betB: {result['betB']['bettingHouse']} - Odds: {result['betB']['odds']}", file=sys.stderr)
+        
+        return result
 
     def _map_coordinate_data_to_system_format(self, general_data: Dict, betting_data: List[Dict]) -> Dict[str, Any]:
         """Map coordinate-extracted data to current system format with DD-MM-YYYY date support"""
