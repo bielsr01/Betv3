@@ -164,7 +164,7 @@ def parse_sport_league_near_teams(lines: List[Dict], teams_line_index: int) -> T
 def group_bet_lines(lines: List[Dict]) -> List[Dict]:
     """Group betting house lines with adjacent lines for complete bet information"""
     betting_groups = []
-    house_names = ['KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Betano', 'Sportingbet']
+    house_names = ['KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Betano', 'Sportingbet', 'BravoBet', 'Blaze', 'Aposta1', 'Betnacional', 'SuperBet', 'VBet', 'MarjoSports', 'Betfast']
     
     i = 0
     while i < len(lines):
@@ -188,24 +188,32 @@ def group_bet_lines(lines: List[Dict]) -> List[Dict]:
                 'top_position': min(block.get('top', 0) for block in line.get('blocks', [{'top': 0}]))
             }
             
-            # Look for adjacent lines within Y threshold (±50 pixels)
+            # Look for adjacent lines within Y threshold (±25 pixels) but exclude other betting houses
             main_top = group['top_position']
             
-            # Check previous line
+            # Check previous line (only if it doesn't contain a betting house)
             if i > 0:
                 prev_line = lines[i-1]
+                prev_text = prev_line.get('full_text', '')
                 prev_top = min(block.get('top', 0) for block in prev_line.get('blocks', [{'top': 0}]))
-                if abs(prev_top - main_top) <= 50:
+                
+                # Don't combine if previous line contains another betting house
+                has_house = any(house in prev_text for house in house_names)
+                if not has_house and abs(prev_top - main_top) <= 25:
                     group['all_lines'].insert(0, prev_line)
-                    group['combined_text'] = prev_line.get('full_text', '') + ' ' + group['combined_text']
+                    group['combined_text'] = prev_text + ' ' + group['combined_text']
             
-            # Check next line
+            # Check next line (only if it doesn't contain a betting house)
             if i + 1 < len(lines):
                 next_line = lines[i+1]
+                next_text = next_line.get('full_text', '')
                 next_top = min(block.get('top', 0) for block in next_line.get('blocks', [{'top': 0}]))
-                if abs(next_top - main_top) <= 50:
+                
+                # Don't combine if next line contains another betting house
+                has_house = any(house in next_text for house in house_names)
+                if not has_house and abs(next_top - main_top) <= 25:
                     group['all_lines'].append(next_line)
-                    group['combined_text'] += ' ' + next_line.get('full_text', '')
+                    group['combined_text'] += ' ' + next_text
             
             betting_groups.append(group)
         
@@ -244,7 +252,7 @@ def extract_bet_type_from_group(combined_text: str) -> str:
             return match.group(1).strip()
     
     # Fallback: extract text between house name and first large number
-    house_match = re.search(r'(?:KTO|Pinnacle|Bet365|Betfair|Betano)\s*\([^)]*\)\s*([^0-9]+?)(?:\d+\.\d+|\d{3,})', text, re.IGNORECASE)
+    house_match = re.search(r'(?:KTO|Pinnacle|Bet365|Betfair|Betano|BravoBet|Blaze|Aposta1|Betnacional|SuperBet|VBet|MarjoSports|Betfast)\s*\([^)]*\)\s*([^0-9]+?)(?:\d+\.\d+|\d{3,})', text, re.IGNORECASE)
     if house_match:
         bet_type = house_match.group(1).strip()
         # Clean common symbols
@@ -297,16 +305,24 @@ def extract_numbers_with_context(combined_text: str) -> Dict[str, str]:
     # 1. Find odds: typically 1.01-100, appears after bet type or house name
     odds_candidates = [n for n in normalized_numbers if 1.01 <= n['value'] <= 100.0]
     
-    # Filter out numbers inside parentheses like "(8R)" 
+    # Filter out numbers inside parentheses like "(8R)" and bet type numbers like "10.5" in "Abaixo 10.5"
     filtered_odds = []
     for candidate in odds_candidates:
         start = candidate['start']
         # Check if this number is inside parentheses
-        before_text = text[max(0, start-10):start]
-        after_text = text[start:start+10]
+        before_text = text[max(0, start-15):start]
+        after_text = text[start:start+15]
         
         # Skip if number is inside parentheses like "(8R)"
         if '(' in before_text and ')' in after_text:
+            continue
+        
+        # Skip if number is part of bet type (preceded by Acima/Abaixo/Over/Under)
+        if re.search(r'(?:acima|abaixo|over|under)\s*$', before_text, re.IGNORECASE):
+            continue
+            
+        # Skip if number is followed by "- escanteios" or similar bet type indicators
+        if re.search(r'^\s*[-–—]\s*(?:escanteios|corners|gols|goals)', after_text, re.IGNORECASE):
             continue
         
         filtered_odds.append(candidate)

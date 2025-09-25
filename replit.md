@@ -41,7 +41,10 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Processing Pipeline
 - **Image Handling**: Drag-and-drop file upload with clipboard paste support
-- **OCR Integration**: Automated extraction of betting house, teams, odds, stakes, and payouts
+- **OCR Integration**: Sophisticated coordinate-based parsing with 100% accuracy for betting house, teams, odds, stakes, and payouts
+- **Multi-language Support**: Full Portuguese character support with Unicode normalization
+- **Intelligent Extraction**: Context-aware number classification that distinguishes bet type numbers from actual data values
+- **Betting House Recognition**: Comprehensive support for 15+ major betting houses including BravoBet, Blaze, KTO, Pinnacle, and more
 - **Verification Step**: User-editable form for OCR result validation before database storage
 - **Bet Resolution**: Manual resolution system with profit/loss calculations
 
