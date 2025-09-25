@@ -221,45 +221,48 @@ class BettingSlipOCR:
                         
             if not headers:
                 print("Table headers not found with coordinate method", file=sys.stderr)
-                return self._get_default_result()
+                # Continue processing even without headers for general data extraction
+                pass
             
             print(f"Found headers: {headers}", file=sys.stderr)
             
-            # Find Y coordinates (vertical) of betting lines
+            # Find Y coordinates (vertical) of betting lines  
             linhas_de_aposta_y = []
-            for line in lines:
-                if 'Words' not in line or not line['Words']:
-                    continue
-                for word in line['Words']:
-                    if "Chance" in headers and abs(word['Left'] - headers["Chance"]) < 50:
-                        linhas_de_aposta_y.append(line['Words'][0]['Top'])
-                        break
-
-            dados_apostas = []
-            for y_aposta in sorted(list(set(linhas_de_aposta_y))):
-                dados_da_aposta = {}
-                dados_da_aposta["Casa de Aposta"] = "Não encontrado"
-
+            if headers and "Chance" in headers:
                 for line in lines:
                     if 'Words' not in line or not line['Words']:
                         continue
+                    for word in line['Words']:
+                        if abs(word['Left'] - headers["Chance"]) < 50:
+                            linhas_de_aposta_y.append(line['Words'][0]['Top'])
+                            break
 
-                    word_top = line['Words'][0]['Top']
-                    if abs(word_top - y_aposta) < 10:
-                        word_left = line['Words'][0]['Left']
-                        word_text = line['LineText'].strip().replace("•", "")
-                        
-                        if word_left < headers["Chance"]:
-                            dados_da_aposta["Casa de Aposta"] = word_text
-                        elif abs(word_left - headers["Chance"]) < 50:
-                            dados_da_aposta["Tipo de Aposta"] = word_text
-                        elif "Aposta" in headers and abs(word_left - headers["Aposta"]) < 50:
-                            dados_da_aposta["Odd"] = word_text
-                        elif "Lucro" in headers and abs(word_left - headers["Lucro"]) < 50:
-                            dados_da_aposta["Lucro da Aposta"] = word_text
-                
-                if len(dados_da_aposta) > 1:
-                    dados_apostas.append(dados_da_aposta)
+            dados_apostas = []
+            if headers:
+                for y_aposta in sorted(list(set(linhas_de_aposta_y))):
+                    dados_da_aposta = {}
+                    dados_da_aposta["Casa de Aposta"] = "Não encontrado"
+
+                    for line in lines:
+                        if 'Words' not in line or not line['Words']:
+                            continue
+
+                        word_top = line['Words'][0]['Top']
+                        if abs(word_top - y_aposta) < 10:
+                            word_left = line['Words'][0]['Left']
+                            word_text = line['LineText'].strip().replace("•", "")
+                            
+                            if "Chance" in headers and word_left < headers["Chance"]:
+                                dados_da_aposta["Casa de Aposta"] = word_text
+                            elif "Chance" in headers and abs(word_left - headers["Chance"]) < 50:
+                                dados_da_aposta["Tipo de Aposta"] = word_text
+                            elif "Aposta" in headers and abs(word_left - headers["Aposta"]) < 50:
+                                dados_da_aposta["Odd"] = word_text
+                            elif "Lucro" in headers and abs(word_left - headers["Lucro"]) < 50:
+                                dados_da_aposta["Lucro da Aposta"] = word_text
+                    
+                    if len(dados_da_aposta) > 1:
+                        dados_apostas.append(dados_da_aposta)
 
             print(f"Extracted {len(dados_apostas)} betting entries", file=sys.stderr)
             
