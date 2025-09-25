@@ -127,7 +127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             content: [
               {
                 type: "text",
-                text: "Extract all visible text from this image exactly as it appears. Return only the raw text content."
+                text: "Extract text from image. Be fast."
               },
               {
                 type: "image_url",
@@ -138,18 +138,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ]
           }
         ],
-        max_tokens: 1200,
-        temperature: 0.2
+        max_tokens: 300,
+        temperature: 0.5
       };
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();

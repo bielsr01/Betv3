@@ -50,7 +50,7 @@ class PerplexityOCR:
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Extract all visible text from this image exactly as it appears. Return only the raw text content."
+                                "text": "Extract text from image. Be fast."
                             },
                             {
                                 "type": "image_url",
@@ -61,8 +61,8 @@ class PerplexityOCR:
                         ]
                     }
                 ],
-                "max_tokens": 1200,
-                "temperature": 0.2
+                "max_tokens": 300,
+                "temperature": 0.5
             }
             
             headers = {
@@ -71,7 +71,7 @@ class PerplexityOCR:
             }
             
             print("Sending request to Perplexity AI...", file=sys.stderr)
-            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=60)
+            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=5)
             response.raise_for_status()
             
             result = response.json()
@@ -152,8 +152,8 @@ Extract real values from the image. If some data is not visible, use reasonable 
                         ]
                     }
                 ],
-                "max_tokens": 1300,
-                "temperature": 0.15
+                "max_tokens": 500,
+                "temperature": 0.3
             }
             
             headers = {
@@ -162,7 +162,7 @@ Extract real values from the image. If some data is not visible, use reasonable 
             }
             
             print("Sending structured extraction request to Perplexity AI...", file=sys.stderr)
-            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=60)
+            response = requests.post(self.endpoint, headers=headers, json=payload, timeout=5)
             response.raise_for_status()
             
             result = response.json()
