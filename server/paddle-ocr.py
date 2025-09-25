@@ -298,23 +298,27 @@ class BettingSlipOCR:
         for i, line in enumerate(lines):
             line = line.strip()
             
-            # REGRA 1: Extrair ROI percentage (aceitar vírgulas e pontos - formato brasileiro)
-            roi_match = re.search(r'(\d+[,\.]\d+)%\s+ROI', line)
+            # REGRA 1: Extrair ROI percentage (múltiplos formatos: "X.XX% ROI" ou "ROI: X.XX%")
+            roi_match = re.search(r'(?:(\d+[,\.]\d+)%\s+ROI|ROI:\s*(\d+[,\.]\d+)%)', line)
             if roi_match:
-                # Normalizar para formato padrão (substituir vírgula por ponto)
-                percentage = roi_match.group(1).replace(',', '.')
+                # Capturar o grupo que não é None
+                percentage = (roi_match.group(1) or roi_match.group(2)).replace(',', '.')
                 result['totalProfitPercentage'] = f"{percentage}%"
                 print(f"ROI percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
             
             # REGRA 2: Extrair times com Unicode (acentos) e hífens
-            # Aceitar qualquer letra Unicode, hífens, espaços para times brasileiros
-            teams_match = re.search(r'([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)\s*[–-]\s*([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)\s+Futebol', line, re.IGNORECASE)
+            # Capturar times antes de percentuais ou "Futebol" (formato: "Team A – Team B 1.59% Futebol")
+            teams_match = re.search(r'([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ&]+)\s*[–-]\s*([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ&]+)(?:\s+[\d,\.]+%)?(?:\s+Futebol)', line, re.IGNORECASE)
             if teams_match:
                 team_a = teams_match.group(1).strip()
                 team_b = teams_match.group(2).strip()
                 
+                # Limpar possíveis sufixos dos nomes (FC, etc.)
+                team_a = re.sub(r'\s+(FC|SC|CF|AC)$', r' \1', team_a)
+                team_b = re.sub(r'\s+(FC|SC|CF|AC)$', r' \1', team_b)
+                
                 # Validar se são times válidos (não palavras comuns)
-                invalid_words = ['surebet', 'google', 'chrome', 'mostrar', 'total', 'aposta', 'documento']
+                invalid_words = ['surebet', 'google', 'chrome', 'mostrar', 'total', 'aposta', 'documento', 'evento']
                 if (not any(word in team_a.lower() or word in team_b.lower() for word in invalid_words) 
                     and len(team_a) > 2 and len(team_b) > 2):
                     result['betA']['teamA'] = team_a
@@ -323,12 +327,15 @@ class BettingSlipOCR:
                     result['betB']['teamB'] = team_b
                     print(f"Teams extracted: {team_a} vs {team_b}", file=sys.stderr)
             
-            # REGRA 3: Extrair esporte e liga (formato: "Time A – Time B Futebol / País - Liga")
+            # REGRA 3: Extrair esporte e liga (remover ROI da liga se presente)
             sport_match = re.search(r'Futebol\s*/\s*(.+)', line)
             if sport_match:
                 result['sport'] = 'Futebol'
                 league_part = sport_match.group(1).strip()
-                result['league'] = league_part
+                
+                # Remover ROI da liga se estiver presente
+                league_clean = re.sub(r'\s+ROI:\s*\d+[,\.]\d+%', '', league_part)
+                result['league'] = league_clean.strip()
                 print(f"Sport/League found: {result['sport']} / {result['league']}", file=sys.stderr)
             
             # REGRA 4: Detectar início da tabela
