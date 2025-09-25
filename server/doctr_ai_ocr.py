@@ -431,16 +431,15 @@ class DocTRAIOCR:
 
 def main():
     """Main function for DocTR AI OCR"""
-    if len(sys.argv) != 2:
-        print("Usage: python doctr_ai_ocr.py <base64_image_data>")
-        sys.exit(1)
-    
     try:
         # Initialize DocTR AI OCR
         doctr_ocr = DocTRAIOCR()
         
-        # Decode image data
-        base64_data = sys.argv[1]
+        # Read base64 data from stdin to avoid E2BIG error
+        base64_data = sys.stdin.read().strip()
+        if not base64_data:
+            raise ValueError("No image data received from stdin")
+        
         image_data = base64.b64decode(base64_data)
         
         # Perform AI OCR and betting data extraction
