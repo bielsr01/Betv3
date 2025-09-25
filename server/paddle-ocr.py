@@ -50,7 +50,7 @@ class PerplexityOCR:
                         "content": [
                             {
                                 "type": "text",
-                                "text": "Extract all visible text from this image exactly as it appears. Do not interpret, translate, or format the text. Return only the raw text content with line breaks preserved."
+                                "text": "Extract all visible text from this image exactly as it appears. Return only the raw text content."
                             },
                             {
                                 "type": "image_url",
@@ -61,8 +61,8 @@ class PerplexityOCR:
                         ]
                     }
                 ],
-                "max_tokens": 2000,
-                "temperature": 0.1
+                "max_tokens": 1200,
+                "temperature": 0.2
             }
             
             headers = {
@@ -152,8 +152,8 @@ Extract real values from the image. If some data is not visible, use reasonable 
                         ]
                     }
                 ],
-                "max_tokens": 1500,
-                "temperature": 0.1
+                "max_tokens": 1300,
+                "temperature": 0.15
             }
             
             headers = {
