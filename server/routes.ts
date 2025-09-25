@@ -80,7 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Analysis endpoint using Gemini Vision
+  // OCR Analysis endpoint using Tesseract (Gemini temporarily disabled)
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -89,14 +89,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Image data is required' });
       }
 
-      // Import and use Gemini OCR function
-      const { analyzeSureBetImage } = await import('./gemini-ocr');
-      const result = await analyzeSureBetImage(imageBase64);
+      // Import and use Tesseract OCR function (Gemini disabled)
+      const { analyzeSureBetImageTesseract } = await import('./tesseract-ocr');
+      const result = await analyzeSureBetImageTesseract(imageBase64);
       
       res.json(result);
     } catch (error) {
       console.error('OCR analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image with AI' });
+      res.status(500).json({ error: 'Failed to analyze image with Tesseract' });
     }
   });
 
