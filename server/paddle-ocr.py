@@ -25,7 +25,7 @@ class PerplexityOCR:
             raise ValueError("PERPLEXITY_API_KEY is required")
         
         self.endpoint = "https://api.perplexity.ai/chat/completions"
-        self.model = "llama-3.1-sonar-small-128k-online"
+        self.model = "sonar-pro"
         
         print("Perplexity AI OCR initialized successfully", file=sys.stderr)
 
