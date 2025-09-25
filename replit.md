@@ -41,16 +41,17 @@ Preferred communication style: Simple, everyday language.
 - **Dashboard**: Card-based bet visualization with filtering and sorting capabilities
 - **Theme System**: Comprehensive dark/light mode with CSS custom properties
 
-### Data Processing Pipeline - DocTR AI System
+### Data Processing Pipeline - Dual AI OCR System
+- **Primary OCR**: DocTR (Document Text Recognition) with PyTorch backend as user-specified preference
+- **Fallback OCR**: Gemini AI multimodal OCR for when DocTR is unavailable due to environment constraints
 - **Image Handling**: Drag-and-drop file upload with clipboard paste support
-- **AI OCR Integration**: DocTR (Document Text Recognition) with PyTorch backend for advanced text extraction
-- **Machine Learning**: State-of-the-art transformer models for document understanding and text recognition
-- **Multi-language Support**: Full Portuguese character support with Unicode normalization via AI models
-- **Intelligent Extraction**: AI-powered context-aware number classification and pattern recognition
-- **Betting House Recognition**: AI-enhanced recognition of 15+ major betting houses including KTO, Pinnacle, BravoBet, Blaze, and more
-- **Verification Step**: User-editable form for AI OCR result validation before database storage
-- **Bet Resolution**: Manual resolution system with profit/loss calculations
-- **Performance**: Optimized for 50GB storage environment with PyTorch CPU backend
+- **AI Processing**: State-of-the-art transformer models (DocTR) with Google multimodal AI backup (Gemini)
+- **Multi-language Support**: Full Portuguese character support with Unicode normalization
+- **Intelligent Extraction**: AI-powered context-aware betting data classification and pattern recognition
+- **Betting House Recognition**: Recognition of 15+ major betting houses including KTO, Pinnacle, BravoBet, Blaze
+- **Robust Architecture**: Primary/fallback system ensures functionality despite environment limitations
+- **Performance**: DocTR preferred (PyTorch), Gemini fallback (~16-20s processing time)
+- **User Preference Compliance**: DocTR maintained as primary system per user explicit requirements
 
 ### Design System
 - **Color Palette**: Professional blue primary with semantic status colors

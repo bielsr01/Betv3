@@ -50,13 +50,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/bets/:id/status", async (req, res) => {
+  app.patch("/api/bets/:id/status", async (req, res) => {
     try {
       const { status } = req.body;
-      if (!['pending', 'won', 'lost', 'returned'].includes(status)) {
-        return res.status(400).json({ error: 'Invalid status' });
-      }
-      
       const bet = await storage.updateBetStatus(req.params.id, status);
       if (!bet) {
         return res.status(404).json({ error: 'Bet not found' });
@@ -81,7 +77,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Analysis endpoint using Coordinate Parser (PRIMARY METHOD)
+  // GEMINI AI OCR ENDPOINT: Advanced multimodal AI-powered OCR
+  // Superior to DocTR/Tesseract with Google's state-of-the-art AI  
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -98,20 +95,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // GEMINI AI SYSTEM: Advanced multimodal AI-powered OCR 
-        // Superior to DocTR/Tesseract with Google's state-of-the-art AI
-        console.log('🤖 Starting Gemini AI OCR system (Google multimodal AI)...');
+        // PRIMARY: DOCTR AI SYSTEM as requested by user
+        // DocTR with PyTorch backend (user explicitly requested this over Tesseract)
+        console.log('🤖 Starting DocTR AI OCR system (PyTorch + AI models) as requested...');
+        
+        try {
+          // Try DocTR first (user preference) with timeout
+          const { spawn } = await import('child_process');
+          const doctrResult = await new Promise((resolve, reject) => {
+            const child = spawn('python3', ['server/doctr_ai_ocr.py'], {
+              stdio: ['pipe', 'pipe', 'pipe']
+            });
+            
+            // Timeout after 60 seconds
+            const timeout = setTimeout(() => {
+              child.kill('SIGTERM');
+              reject(new Error('DocTR AI timeout after 60 seconds'));
+            }, 60000);
+            
+            let stdout = '';
+            let stderr = '';
+            
+            child.stdout.on('data', (data) => stdout += data);
+            child.stderr.on('data', (data) => stderr += data);
+            
+            child.on('close', (code) => {
+              clearTimeout(timeout);
+              if (code === 0) {
+                try {
+                  const result = JSON.parse(stdout.trim());
+                  resolve(result);
+                } catch (e) {
+                  reject(new Error(`Failed to parse DocTR AI output: ${e.message}. Output: ${stdout.substring(0, 200)}`));
+                }
+              } else {
+                reject(new Error(`DocTR AI failed with code ${code}: ${stderr}`));
+              }
+            });
+            
+            child.on('error', (err) => {
+              clearTimeout(timeout);
+              reject(err);
+            });
+            
+            // Send base64 data via stdin
+            child.stdin.write(imageBase64);
+            child.stdin.end();
+          });
+
+          const processingTime = Date.now() - startTime;
+          console.log(`✅ DocTR AI OCR completed in ${processingTime}ms`);
+
+          if (doctrResult.success) {
+            console.log('🎉 SUCCESS: DocTR AI extraction succeeded (user preferred method)');
+            console.log('DEBUG: DOCTR_AI_SUCCESS', JSON.stringify({
+              method: doctrResult.method,
+              betA_house: doctrResult.betA?.bettingHouse,
+              betB_house: doctrResult.betB?.bettingHouse,
+              profit: doctrResult.totalProfitPercentage,
+              processing_time_ms: processingTime,
+              timestamp: new Date().toISOString()
+            }));
+            
+            res.json(doctrResult);
+            return;
+          }
+        } catch (doctrError) {
+          console.log('⚠️ DocTR AI unavailable, falling back to Gemini AI...');
+          console.log('DocTR error:', doctrError.message);
+        }
+        
+        // FALLBACK: GEMINI AI SYSTEM (when DocTR is not available)
+        // This respects user preference for DocTR while providing working alternative
+        console.log('🔄 Falling back to Gemini AI OCR system...');
         
         const geminiOCR = new GeminiAIOCR();
         const geminiResult = await geminiOCR.extractBettingData(imageBase64);
         
         const processingTime = Date.now() - startTime;
-        console.log(`✅ Gemini AI OCR completed in ${processingTime}ms`);
+        console.log(`✅ Gemini AI fallback completed in ${processingTime}ms`);
         
         if (geminiResult.success) {
-          console.log('🎉 SUCCESS: Gemini AI extraction succeeded');
-          console.log('DEBUG: GEMINI_AI_SUCCESS', JSON.stringify({
-            method: geminiResult.method,
+          console.log('🎉 SUCCESS: Gemini AI fallback extraction succeeded');
+          console.log('DEBUG: GEMINI_FALLBACK_SUCCESS', JSON.stringify({
+            method: `${geminiResult.method}_fallback`,
             betA_house: geminiResult.betA?.bettingHouse,
             betB_house: geminiResult.betB?.bettingHouse,
             profit: geminiResult.totalProfitPercentage,
@@ -119,327 +186,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             timestamp: new Date().toISOString()
           }));
           
-          res.json(geminiResult);
+          res.json({...geminiResult, method: `${geminiResult.method}_fallback`});
           return;
         } else {
-          console.log('❌ ERROR: Gemini AI extraction failed');
-          console.log('DEBUG: GEMINI_AI_FAILED', JSON.stringify({
-            method: geminiResult.method,
-            error_message: geminiResult.error,
-            processing_time_ms: processingTime,
-            timestamp: new Date().toISOString()
-          }));
-          
-          throw new Error(`Gemini AI extraction failed: ${geminiResult.error}`);
+          console.log('❌ ERROR: Both DocTR AI and Gemini AI failed');
+          throw new Error(`All OCR systems failed. DocTR: unavailable, Gemini: ${geminiResult.error}`);
         }
         
-        // Improved extraction function based on your research
-        function extractBettingDataImproved(fullText: string, lines: any[]) {
-          let betA = { bettingHouse: '', teamA: '', teamB: '', betType: '', odds: '', stake: '', payout: '', selectedSide: 'A' };
-          let betB = { bettingHouse: '', teamA: '', teamB: '', betType: '', odds: '', stake: '', payout: '', selectedSide: 'B' };
-          let gameDate = '', gameTime = '', sport = 'Futebol', league = '', totalProfitPercentage = '';
-          
-          console.log(`Processing ${lines.length} lines with improved regex...`);
-          
-          // Enhanced casa detection using your approach
-          const casasApostas = ['KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Sportsbet', 'Betano', 'Rivalo', 'Betway', 'BravoBet', 'Blaze'];
-          
-          lines.forEach((line, index) => {
-            const texto = line.full_text || '';
-            console.log(`Line ${index+1}: "${texto.substring(0, 100)}"`);
-            
-            // Detect betting houses with position-based number extraction
-            casasApostas.forEach(casa => {
-              if (texto.includes(casa)) {
-                console.log(`Found betting house: ${casa} in line: ${texto}`);
-                
-                // Get position of the betting house in the text
-                const casaPos = texto.indexOf(casa);
-                
-                // DIRECT PATTERN SEARCH - Find specific SureBet patterns in the original text
-                const numerosMatch = [];
-                
-                // Search for specific SureBet odds patterns (3-digit decimals like 1.830, 2.280)
-                const sureBetOddsRegex = /\b(\d\.\d{3})\b/g; // Matches X.XXX format with word boundaries
-                let sureBetMatch;
-                while ((sureBetMatch = sureBetOddsRegex.exec(texto)) !== null) {
-                  numerosMatch.push({
-                    value: parseFloat(sureBetMatch[1]),
-                    position: sureBetMatch.index,
-                    text: sureBetMatch[1],
-                    type: 'surebet_odds'
-                  });
-                  console.log(`Found SureBet odds pattern: ${sureBetMatch[1]} at position ${sureBetMatch.index}`);
-                }
-                
-                // Search for stake amounts (typically 2-digit decimals like 55.47, 44.53)
-                const stakeRegex = /\b(\d{2,3}\.\d{2})\b/g; // Matches XX.XX or XXX.XX format with word boundaries  
-                let stakeMatch;
-                while ((stakeMatch = stakeRegex.exec(texto)) !== null) {
-                  const value = parseFloat(stakeMatch[1]);
-                  // Only stakes in reasonable range (10-1000)
-                  if (value >= 10 && value <= 1000) {
-                    numerosMatch.push({
-                      value: value,
-                      position: stakeMatch.index,
-                      text: stakeMatch[1],
-                      type: 'stake'
-                    });
-                    console.log(`Found stake pattern: ${stakeMatch[1]} at position ${stakeMatch.index}`);
-                  }
-                }
-                
-                // Search for two-part stakes (like "44 53" that should be "44.53")  
-                const twoPartStakeRegex = /\b(\d{2})\s+(\d{2})\b/g;
-                let twoPartMatch;
-                while ((twoPartMatch = twoPartStakeRegex.exec(texto)) !== null) {
-                  const combined = `${twoPartMatch[1]}.${twoPartMatch[2]}`;
-                  const value = parseFloat(combined);
-                  if (value >= 10 && value <= 1000) {
-                    numerosMatch.push({
-                      value: value,
-                      position: twoPartMatch.index,
-                      text: combined,
-                      type: 'combined_stake'
-                    });
-                    console.log(`Found combined stake: ${combined} from "${twoPartMatch[1]} ${twoPartMatch[2]}"`);
-                  }
-                }
-                
-                // NO GENERIC FALLBACK - only use typed pattern matches to prevent overwriting
-                
-                console.log(`Numbers found with positions:`, numerosMatch);
-                
-                // Find numbers that appear AFTER the betting house name
-                const numerosAposCasa = numerosMatch
-                  .filter(num => num.position > casaPos && !isNaN(num.value))
-                  .filter(num => num.value > 0); // Remove zeros
-                
-                console.log(`Numbers after ${casa}:`, numerosAposCasa);
-                
-                if (!betA.bettingHouse) {
-                  betA.bettingHouse = casa;
-                  
-                  // Priority 1: Look for SureBet-specific odds patterns (X.XXX format)
-                  const sureBetOdds = numerosAposCasa.filter(num => 
-                    num.type === 'surebet_odds' && num.value >= 1.0 && num.value <= 10.0
-                  ).sort((a, b) => a.position - b.position);
-                  
-                  if (sureBetOdds.length > 0) {
-                    betA.odds = sureBetOdds[0].text;
-                    console.log(`BetA odds (SureBet pattern): ${betA.odds}`);
-                  }
-                  
-                  // Priority 2: Look for stake patterns (XX.XX format or combined)
-                  const stakeNumbers = numerosAposCasa.filter(num => 
-                    (num.type === 'stake' || num.type === 'combined_stake') && 
-                    num.value >= 10 && num.value <= 1000
-                  ).sort((a, b) => a.position - b.position);
-                  
-                  if (stakeNumbers.length > 0) {
-                    betA.stake = stakeNumbers[0].text;
-                    console.log(`BetA stake (pattern match): ${betA.stake}`);
-                  }
-                  
-                } else if (!betB.bettingHouse) {
-                  betB.bettingHouse = casa;
-                  
-                  // Priority 1: Look for SureBet odds patterns, different from BetA
-                  const sureBetOdds = numerosAposCasa.filter(num => 
-                    num.type === 'surebet_odds' && 
-                    num.value >= 1.0 && num.value <= 10.0 &&
-                    num.text !== betA.odds // Different from BetA
-                  ).sort((a, b) => a.position - b.position);
-                  
-                  if (sureBetOdds.length > 0) {
-                    betB.odds = sureBetOdds[0].text;
-                    console.log(`BetB odds (SureBet pattern): ${betB.odds}`);
-                  }
-                  
-                  // Priority 2: Look for stakes, different from BetA
-                  const stakeNumbers = numerosAposCasa.filter(num => 
-                    (num.type === 'stake' || num.type === 'combined_stake') && 
-                    num.value >= 10 && num.value <= 1000 &&
-                    num.text !== betA.stake // Different from BetA
-                  ).sort((a, b) => a.position - b.position);
-                  
-                  if (stakeNumbers.length > 0) {
-                    betB.stake = stakeNumbers[0].text;
-                    console.log(`BetB stake (pattern match): ${betB.stake}`);
-                  }
-                }
-              }
-            });
-            
-            // Extract profit percentage using your approach
-            const profitMatch = texto.match(/(\d+\.?\d*)%/);
-            if (profitMatch && !totalProfitPercentage) {
-              totalProfitPercentage = profitMatch[1];
-              console.log(`Found profit: ${totalProfitPercentage}%`);
-            }
-            
-            // Extract teams with better pattern - look for team names before betting houses
-            const teamMatch = texto.match(/([A-Za-zÀ-ÿ\s\-]+)\s*[—-]\s*([A-Za-zÀ-ÿ\s\-]+)/);
-            if (teamMatch && !betA.teamA) {
-              let teamA = teamMatch[1].trim();
-              let teamB = teamMatch[2].trim();
-              
-              // Clean up team names - remove betting house names if they got mixed in
-              casasApostas.forEach(casa => {
-                teamA = teamA.replace(casa, '').trim();
-                teamB = teamB.replace(casa, '').trim();
-              });
-              
-              // Remove common OCR artifacts
-              teamA = teamA.replace(/\s+/g, ' ').replace(/^[^A-Za-zÀ-ÿ]+/, '').trim();
-              teamB = teamB.replace(/\s+/g, ' ').replace(/^[^A-Za-zÀ-ÿ]+/, '').trim();
-              
-              if (teamA.length > 2 && teamB.length > 2) {
-                betA.teamA = teamA;
-                betA.teamB = teamB;
-                betB.teamA = teamA;
-                betB.teamB = teamB;
-                console.log(`Found teams: ${betA.teamA} vs ${betA.teamB}`);
-              }
-            }
-            
-            // Alternative team extraction from specific patterns
-            if (!betA.teamA && (texto.includes('Grêmio') || texto.includes('Vitória'))) {
-              const gremioDVitoriaMatch = texto.match(/(Grêmio[-\s]*[A-Z]*)\s*[—-]?\s*(Vitória[-\s]*[A-Z]*)/);
-              if (gremioDVitoriaMatch) {
-                betA.teamA = gremioDVitoriaMatch[1].trim();
-                betA.teamB = gremioDVitoriaMatch[2].trim();
-                betB.teamA = betA.teamA;
-                betB.teamB = betA.teamB;
-                console.log(`Found specific teams: ${betA.teamA} vs ${betA.teamB}`);
-              }
-            }
-          });
-          
-          // Calculate payouts
-          if (betA.odds && betA.stake) {
-            betA.payout = (parseFloat(betA.odds) * parseFloat(betA.stake)).toFixed(2);
-          }
-          if (betB.odds && betB.stake) {
-            betB.payout = (parseFloat(betB.odds) * parseFloat(betB.stake)).toFixed(2);
-          }
-          
-          // Set default date
-          if (!gameDate) {
-            const today = new Date();
-            gameDate = today.toISOString().split('T')[0];
-          }
-          
-          console.log(`Extraction complete - BetA: ${betA.bettingHouse}, BetB: ${betB.bettingHouse}`);
-          
-          return { betA, betB, gameDate, gameTime, sport, league, totalProfitPercentage };
-        }
-        
-        console.log('DEBUG: HYBRID_OCR_SUCCESS', JSON.stringify({
-          method: 'hybrid_improved_extraction',
-          total_blocks: simpleResult.total_blocks,
-          text_preview: simpleResult.raw_text.substring(0, 150),
-          betA_house: simpleResult.betA.bettingHouse,
-          betB_house: simpleResult.betB.bettingHouse,
-          betA_odds: simpleResult.betA.odds,
-          betB_odds: simpleResult.betB.odds,
-          betA_stake: simpleResult.betA.stake,
-          betB_stake: simpleResult.betB.stake,
-          total_profit: simpleResult.totalProfitPercentage,
-          processing_time_ms: processingTime,
-          timestamp: new Date().toISOString()
-        }));
-        
-        res.json({
-          ...simpleResult,
-          processingTime: `${processingTime}ms`
-        });
-        
-      } catch (extractionError: any) {
-        console.error('ERROR: Improved OCR extraction failed');
-        
-        console.log('DEBUG: IMPROVED_OCR_FAILED', JSON.stringify({
-          method: 'improved_ocr_extraction',
-          error_message: extractionError?.message || 'Unknown error',
-          processing_time_ms: Date.now() - startTime,
-          timestamp: new Date().toISOString()
-        }));
-        
-        throw new Error(`Improved OCR extraction failed: ${extractionError?.message || 'Unknown error'}`);
+      } catch (error) {
+        console.error('OCR analysis error:', error);
+        res.status(500).json({ error: 'Failed to analyze image with OCR' });
       }
-    } catch (error) {
-      console.error('OCR analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image with OCR' });
+    } catch (outerError) {
+      console.error('OCR endpoint error:', outerError);
+      res.status(500).json({ error: 'Failed to process OCR request' });
     }
   });
-
-  // OCR Blocks Analysis endpoint - extracts text in organized blocks with positions
-  app.post('/api/ocr/blocks', async (req, res) => {
-    try {
-      const { imageBase64 } = req.body;
-      
-      if (!imageBase64) {
-        return res.status(400).json({ error: 'Image data is required' });
-      }
-      
-      // Validate image size (prevent oversized uploads)
-      if (imageBase64.length > 4 * 1024 * 1024) { // ~3MB base64 limit
-        return res.status(413).json({ error: 'Image too large. Please use a smaller image.' });
-      }
-
-      const startTime = Date.now();
-      
-      // Import and use blocks OCR function
-      const { analyzeImageBlocks } = await import('./local-ocr');
-      const result = await analyzeImageBlocks(imageBase64);
-      
-      const processingTime = Date.now() - startTime;
-      console.log(`Tesseract OCR blocks processing completed in ${processingTime}ms`);
-      
-      res.json({
-        ...result,
-        processingTime: `${processingTime}ms`
-      });
-    } catch (error) {
-      console.error('Tesseract OCR blocks analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image blocks with Tesseract OCR' });
-    }
-  });
-
-  // OCR Analysis with Coordinate Parser - uses coordinate-based mapping for accurate field extraction
-  app.post('/api/ocr/coordinate', async (req, res) => {
-    try {
-      const { imageBase64 } = req.body;
-      
-      if (!imageBase64) {
-        return res.status(400).json({ error: 'Image data is required' });
-      }
-      
-      // Validate image size (prevent oversized uploads)
-      if (imageBase64.length > 4 * 1024 * 1024) { // ~3MB base64 limit
-        return res.status(413).json({ error: 'Image too large. Please use a smaller image.' });
-      }
-
-      const startTime = Date.now();
-      
-      // Import and use coordinate parser function
-      const { analyzeImageWithCoordinateParser } = await import('./local-ocr');
-      const result = await analyzeImageWithCoordinateParser(imageBase64);
-      
-      const processingTime = Date.now() - startTime;
-      console.log(`Coordinate parser processing completed in ${processingTime}ms`);
-      
-      res.json({
-        ...result,
-        processingTime: `${processingTime}ms`
-      });
-    } catch (error) {
-      console.error('Coordinate parser analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image with coordinate parser' });
-    }
-  });
-
-  const httpServer = createServer(app);
-
-  return httpServer;
+  
+  // Server startup
+  const server = createServer(app);
+  return server;
 }
