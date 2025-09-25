@@ -1,0 +1,93 @@
+import json
+import re
+from datetime import datetime
+
+def extrair_dados_dinamicos(json_data):
+    lines = json_data['ParsedResults'][0]['TextOverlay']['Lines']
+
+    # 1. Extrair dados gerais do evento
+    resultados_gerais = {}
+    
+    for line in lines:
+        text = line['LineText']
+        
+        # Encontrar e formatar Data e Horário
+        data_hora_match = re.search(r'(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2})', text)
+        if data_hora_match:
+            data_original = data_hora_match.group(1)
+            hora_original = data_hora_match.group(2)
+            
+            data_objeto = datetime.strptime(data_original, '%Y-%m-%d')
+            data_formatada_br = data_objeto.strftime('%d-%m-%Y')
+            
+            resultados_gerais['Data e Horário do Jogo'] = f"{data_formatada_br} {hora_original}"
+
+        # Encontrar Times
+        times_match = re.search(r'(.+) - (.+)', text)
+        if times_match and 'Futebol' not in text and 'Liga' not in text:
+            resultados_gerais['Time A'] = times_match.group(1).strip()
+            resultados_gerais['Time B'] = times_match.group(2).strip()
+            
+        # Encontrar Esporte e Liga
+        esporte_liga_match = re.search(r'(.+)/(.+) / (.+)', text)
+        if esporte_liga_match:
+            resultados_gerais['Esporte'] = esporte_liga_match.group(1).strip()
+            resultados_gerais['Liga'] = esporte_liga_match.group(2).strip() + ' / ' + esporte_liga_match.group(3).strip()
+        elif '/' in text and '-' in text:
+            partes = text.split('/')
+            resultados_gerais['Esporte'] = partes[0].strip()
+            liga_partes = partes[1].split('-')
+            resultados_gerais['Liga'] = liga_partes[0].strip() + ' - ' + liga_partes[1].strip()
+
+        # Encontrar Lucro Total em %
+        lucro_total = "Não encontrado"
+        if re.search(r'\d+\.\d+%', text) and "ROI:" not in text:
+            resultados_gerais['Lucro Total em %'] = re.search(r'(\d+\.\d+%)', text).group(1)
+            
+    # 2. Extrair dados da tabela
+    headers = {}
+    for line in lines:
+        if line['LineText'] in ["Chance", "Aposta", "Lucro"]:
+            headers[line['LineText']] = line['Words'][0]['Left']
+            
+    if not headers:
+        return {"erro": "Cabeçalhos da tabela não encontrados."}
+    
+    linhas_de_aposta_y = []
+    for line in lines:
+        for word in line['Words']:
+            if "Chance" in headers and abs(word['Left'] - headers["Chance"]) < 50:
+                linhas_de_aposta_y.append(line['Words'][0]['Top'])
+                break
+
+    dados_apostas = []
+    for y_aposta in sorted(list(set(linhas_de_aposta_y))):
+        dados_da_aposta = {}
+        dados_da_aposta["Casa de Aposta"] = "Não encontrado"
+
+        for line in lines:
+            if 'Words' not in line or not line['Words']:
+                continue
+
+            word_top = line['Words'][0]['Top']
+            if abs(word_top - y_aposta) < 10:
+                word_left = line['Words'][0]['Left']
+                word_text = line['LineText'].strip().replace("•", "")
+                
+                if word_left < headers["Chance"]:
+                    dados_da_aposta["Casa de Aposta"] = word_text
+                elif abs(word_left - headers["Chance"]) < 50:
+                    dados_da_aposta["Tipo de Aposta"] = word_text
+                elif "Aposta" in headers and abs(word_left - headers["Aposta"]) < 50:
+                    dados_da_aposta["Odd"] = word_text
+                elif "Lucro" in headers and abs(word_left - headers["Lucro"]) < 50:
+                    dados_da_aposta["Lucro da Aposta"] = word_text
+        
+        if len(dados_da_aposta) > 1:
+            dados_apostas.append(dados_da_aposta)
+
+    resultados_finais = {**resultados_gerais, "Apostas": dados_apostas}
+    return resultados_finais
+
+# Exemplo de uso com o JSON anterior
+json_data = {"ParsedResults":[{"TextOverlay":{"Lines":[{"LineText":"E3 SureBet - Apostas profissionais - Google Chrome","Words":[{"WordText":"E3","Left":0.0,"Top":12.0,"Height":16.0,"Width":28.0},{"WordText":"SureBet","Left":30.0,"Top":12.0,"Height":16.0,"Width":54.0},{"WordText":"-","Left":86.0,"Top":12.0,"Height":16.0,"Width":8.0},{"WordText":"Apostas","Left":96.0,"Top":12.0,"Height":16.0,"Width":56.0},{"WordText":"profissionais","Left":154.0,"Top":12.0,"Height":16.0,"Width":84.0},{"WordText":"-","Left":240.0,"Top":12.0,"Height":16.0,"Width":8.0},{"WordText":"Google","Left":250.0,"Top":12.0,"Height":16.0,"Width":50.0},{"WordText":"Chrome","Left":302.0,"Top":12.0,"Height":16.0,"Width":56.0}],"MaxHeight":16.0,"MinTop":12.0},{"LineText":"X","Words":[{"WordText":"X","Left":1547.0,"Top":12.0,"Height":18.0,"Width":21.0}],"MaxHeight":18.0,"MinTop":12.0},{"LineText":"°• pt.surebet.com/calculator/show/bEN_yIXYvrU?model=surebet&json_body=%7B\"prongs\"%3А%5B\"%7B%5C\"id%5C\"%3A1816362952%2C%5C\"similar_size%5C\"%3A86%2%5C\"group_size%5C. ®","Words":[{"WordText":"°•","Left":14.0,"Top":51.0,"Height":21.0,"Width":16.0},{"WordText":"pt.surebet.com","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"/","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"calculator","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"/","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"show","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"/","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"bEN_yIXYvrU","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"?","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"model","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"=","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"surebet","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"&","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"json_body","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"=%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"7B","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"prongs","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"3А","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"5B","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"7B","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"5C","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"id","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"5C","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"3A1816362952","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"2C","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"5C","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"similar_size","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"5C","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"3A86","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"2","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"5C","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"\"","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"group_size","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"%","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"5C","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":".","Left":32.0,"Top":51.0,"Height":21.0,"Width":1508.0},{"WordText":"®","Left":1543.0,"Top":51.0,"Height":21.0,"Width":23.0}],"MaxHeight":21.0,"MinTop":51.0},{"LineText":"& surebet","Words":[{"WordText":"&","Left":9.0,"Top":85.0,"Height":21.0,"Width":21.0},{"WordText":"surebet","Left":33.0,"Top":85.0,"Height":21.0,"Width":76.0}],"MaxHeight":21.0,"MinTop":85.0},{"LineText":"Evento em 2 dias (2025-09-27 11:30 -03:00) 3","Words":[{"WordText":"Evento","Left":1199.0,"Top":88.0,"Height":21.0,"Width":55.0},{"WordText":"em","Left":1256.0,"Top":88.0,"Height":21.0,"Width":24.0},{"WordText":"2","Left":1282.0,"Top":88.0,"Height":21.0,"Width":10.0},{"WordText":"dias","Left":1295.0,"Top":88.0,"Height":21.0,"Width":34.0},{"WordText":"(","Left":1332.0,"Top":88.0,"Height":21.0,"Width":92.0},{"WordText":"2025","Left":1332.0,"Top":88.0,"Height":21.0,"Width":92.0},{"WordText":"-","Left":1332.0,"Top":88.0,"Height":21.0,"Width":92.0},{"WordText":"09","Left":1332.0,"Top":88.0,"Height":21.0,"Width":92.0},{"WordText":"-","Left":1332.0,"Top":88.0,"Height":21.0,"Width":92.0},{"WordText":"27","Left":1332.0,"Top":88.0,"Height":21.0,"Width":92.0},{"WordText":"11","Left":1426.0,"Top":88.0,"Height":21.0,"Width":42.0},{"WordText":":","Left":1426.0,"Top":88.0,"Height":21.0,"Width":42.0},{"WordText":"30","Left":1426.0,"Top":88.0,"Height":21.0,"Width":42.0},{"WordText":"-","Left":1471.0,"Top":88.0,"Height":21.0,"Width":76.0},{"WordText":"03","Left":1471.0,"Top":88.0,"Height":21.0,"Width":76.0},{"WordText":":","Left":1471.0,"Top":88.0,"Height":21.0,"Width":76.0},{"WordText":"00","Left":1471.0,"Top":88.0,"Height":21.0,"Width":76.0},{"WordText":")","Left":1471.0,"Top":88.0,"Height":21.0,"Width":76.0},{"WordText":"3","Left":1550.0,"Top":88.0,"Height":21.0,"Width":23.0}],"MaxHeight":21.0,"MinTop":88.0},{"LineText":"Ajax - NAC Breda","Words":[{"WordText":"Ajax","Left":46.0,"Top":169.0,"Height":32.0,"Width":68.0},{"WordText":"-","Left":118.0,"Top":169.0,"Height":32.0,"Width":20.0},{"WordText":"NAC","Left":142.0,"Top":169.0,"Height":32.0,"Width":76.0},{"WordText":"Breda","Left":222.0,"Top":169.0,"Height":32.0,"Width":92.0}],"MaxHeight":32.0,"MinTop":169.0},{"LineText":"Futebol / Holanda / Eredivisie","Words":[{"WordText":"Futebol","Left":46.0,"Top":212.0,"Height":24.0,"Width":99.0},{"WordText":"/","Left":148.0,"Top":212.0,"Height":24.0,"Width":12.0},{"WordText":"Holanda","Left":163.0,"Top":212.0,"Height":24.0,"Width":114.0},{"WordText":"/","Left":280.0,"Top":212.0,"Height":24.0,"Width":12.0},{"WordText":"Eredivisie","Left":295.0,"Top":212.0,"Height":24.0,"Width":128.0}],"MaxHeight":24.0,"MinTop":212.0},{"LineText":"3.47%","Words":[{"WordText":"3.47","Left":1436.0,"Top":161.0,"Height":31.0,"Width":83.0},{"WordText":"%","Left":1436.0,"Top":161.0,"Height":31.0,"Width":83.0}],"MaxHeight":31.0,"MinTop":161.0},{"LineText":"ROI: 558.94%","Words":[{"WordText":"ROI","Left":1441.0,"Top":201.0,"Height":14.0,"Width":35.0},{"WordText":":","Left":1441.0,"Top":201.0,"Height":14.0,"Width":35.0},{"WordText":"558.94","Left":1478.0,"Top":201.0,"Height":14.0,"Width":67.0},{"WordText":"%","Left":1478.0,"Top":201.0,"Height":14.0,"Width":67.0}],"MaxHeight":14.0,"MinTop":201.0},{"LineText":"KTO (BR)","Words":[{"WordText":"KTO","Left":51.0,"Top":323.0,"Height":21.0,"Width":47.0},{"WordText":"(","Left":101.0,"Top":323.0,"Height":21.0,"Width":38.0},{"WordText":"BR","Left":101.0,"Top":323.0,"Height":21.0,"Width":38.0},{"WordText":")","Left":101.0,"Top":323.0,"Height":21.0,"Width":38.0}],"MaxHeight":21.0,"MinTop":323.0},{"LineText":"BravoBet (BR)","Words":[{"WordText":"BravoBet","Left":53.0,"Top":372.0,"Height":18.0,"Width":92.0},{"WordText":"(","Left":147.0,"Top":372.0,"Height":18.0,"Width":37.0},{"WordText":"BR","Left":147.0,"Top":372.0,"Height":18.0,"Width":37.0},{"WordText":")","Left":147.0,"Top":372.0,"Height":18.0,"Width":37.0}],"MaxHeight":18.0,"MinTop":372.0},{"LineText":"Chance","Words":[{"WordText":"Chance","Left":240.0,"Top":282.0,"Height":19.0,"Width":81.0}],"MaxHeight":19.0,"MinTop":282.0},{"LineText":"Acima 8.5 - escanteios","Words":[{"WordText":"Acima","Left":240.0,"Top":321.0,"Height":21.0,"Width":63.0},{"WordText":"8.5","Left":305.0,"Top":321.0,"Height":21.0,"Width":34.0},{"WordText":"-","Left":342.0,"Top":321.0,"Height":21.0,"Width":10.0},{"WordText":"escanteios","Left":355.0,"Top":321.0,"Height":21.0,"Width":109.0}],"MaxHeight":21.0,"MinTop":321.0},{"LineText":"Abaixo 9 - escanteios","Words":[{"WordText":"Abaixo","Left":240.0,"Top":372.0,"Height":18.0,"Width":69.0},{"WordText":"9","Left":312.0,"Top":372.0,"Height":18.0,"Width":16.0},{"WordText":"-","Left":330.0,"Top":372.0,"Height":18.0,"Width":11.0},{"WordText":"escanteios","Left":343.0,"Top":372.0,"Height":18.0,"Width":109.0}],"MaxHeight":18.0,"MinTop":372.0},{"LineText":"1.670 •","Words":[{"WordText":"1.670","Left":575.0,"Top":323.0,"Height":23.0,"Width":66.0},{"WordText":"•","Left":644.0,"Top":323.0,"Height":23.0,"Width":19.0}],"MaxHeight":23.0,"MinTop":323.0},{"LineText":"2.720 •","Words":[{"WordText":"2.720","Left":575.0,"Top":374.0,"Height":21.0,"Width":65.0},{"WordText":"•","Left":643.0,"Top":374.0,"Height":21.0,"Width":18.0}],"MaxHeight":21.0,"MinTop":374.0},{"LineText":"Aposta total:","Words":[{"WordText":"Aposta","Left":603.0,"Top":423.0,"Height":21.0,"Width":77.0},{"WordText":"total","Left":683.0,"Top":423.0,"Height":21.0,"Width":59.0},{"WordText":":","Left":709.0,"Top":423.0,"Height":21.0,"Width":58.0}],"MaxHeight":21.0,"MinTop":423.0},{"LineText":"Aposta","Words":[{"WordText":"Aposta","Left":759.0,"Top":280.0,"Height":26.0,"Width":77.0}],"MaxHeight":26.0,"MinTop":280.0},{"LineText":"97.90","Words":[{"WordText":"97.90","Left":815.0,"Top":323.0,"Height":23.0,"Width":60.0},{"WordText":"97.90","Left":815.0,"Top":323.0,"Height":23.0,"Width":60.0}],"MaxHeight":23.0,"MinTop":323.0},{"LineText":"60.10","Words":[{"WordText":"60.10","Left":815.0,"Top":372.0,"Height":25.0,"Width":60.0},{"WordText":"60.10","Left":815.0,"Top":372.0,"Height":25.0,"Width":60.0}],"MaxHeight":25.0,"MinTop":372.0},{"LineText":"158","Words":[{"WordText":"158","Left":834.0,"Top":423.0,"Height":21.0,"Width":42.0},{"WordText":"158","Left":834.0,"Top":423.0,"Height":21.0,"Width":42.0}],"MaxHeight":21.0,"MinTop":423.0},{"LineText":"USD V","Words":[{"WordText":"USD","Left":917.0,"Top":323.0,"Height":19.0,"Width":55.0},{"WordText":"V","Left":992.0,"Top":323.0,"Height":19.0,"Width":19.0}],"MaxHeight":19.0,"MinTop":323.0},{"LineText":"USD v","Words":[{"WordText":"USD","Left":917.0,"Top":372.0,"Height":22.0,"Width":53.0},{"WordText":"v","Left":972.0,"Top":371.0,"Height":21.0,"Width":19.0}],"MaxHeight":22.0,"MinTop":371.0},{"LineText":"USD v","Words":[{"WordText":"USD","Left":917.0,"Top":422.0,"Height":22.0,"Width":53.0},{"WordText":"v","Left":972.0,"Top":422.0,"Height":21.0,"Width":19.0}],"MaxHeight":23.0,"MinTop":422.0},{"LineText":"Lucro","Words":[{"WordText":"Lucro","Left":1279.0,"Top":281.0,"Height":17.0,"Width":60.0},{"WordText":"Lucro","Left":1279.0,"Top":281.0,"Height":17.0,"Width":60.0}],"MaxHeight":17.0,"MinTop":281.0},{"LineText":"5.49","Words":[{"WordText":"5.49","Left":1293.0,"Top":323.0,"Height":18.0,"Width":46.0},{"WordText":"5.49","Left":1293.0,"Top":323.0,"Height":18.0,"Width":46.0}],"MaxHeight":18.0,"MinTop":323.0},{"LineText":"5.47","Words":[{"WordText":"5.47","Left":1293.0,"Top":372.0,"Height":23.0,"Width":46.0},{"WordText":"5.47","Left":1293.0,"Top":372.0,"Height":23.0,"Width":46.0}],"MaxHeight":23.0,"MinTop":372.0},{"LineText":"O","Words":[{"WordText":"O","Left":1139.0,"Top":418.0,"Height":25.0,"Width":25.0}],"MaxHeight":25.0,"MinTop":418.0},{"LineText":"Mostrar comissões","Words":[{"WordText":"Mostrar","Left":79.0,"Top":487.0,"Height":19.0,"Width":76.0},{"WordText":"comissões","Left":157.0,"Top":487.0,"Height":19.0,"Width":108.0}],"MaxHeight":19.0,"MinTop":487.0},{"LineText":"Use sua própria taxa de câmbio","Words":[{"WordText":"Use","Left":79.0,"Top":534.0,"Height":23.0,"Width":41.0},{"WordText":"sua","Left":122.0,"Top":534.0,"Height":23.0,"Width":37.0},{"WordText":"própria","Left":162.0,"Top":534.0,"Height":23.0,"Width":72.0},{"WordText":"taxa","Left":237.0,"Top":534.0,"Height":23.0,"Width":46.0},{"WordText":"de","Left":286.0,"Top":534.0,"Height":23.0,"Width":26.0},{"WordText":"câmbio","Left":315.0,"Top":534.0,"Height":23.0,"Width":76.0}],"MaxHeight":23.0,"MinTop":534.0},{"LineText":"Arredondar aposta até:","Words":[{"WordText":"Arredondar","Left":79.0,"Top":582.0,"Height":21.0,"Width":111.0},{"WordText":"aposta","Left":192.0,"Top":582.0,"Height":21.0,"Width":71.0},{"WordText":"até","Left":265.0,"Top":582.0,"Height":21.0,"Width":40.0},{"WordText":":","Left":265.0,"Top":582.0,"Height":21.0,"Width":40.0}],"MaxHeight":21.0,"MinTop":582.0},{"LineText":"1","Words":[{"WordText":"1","Left":379.0,"Top":580.0,"Height":21.0,"Width":14.0}],"MaxHeight":21.0,"MinTop":580.0},{"LineText":"Levar em consideração as taxas de câmbio ao arredond

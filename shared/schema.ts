@@ -61,8 +61,10 @@ export const singleBetOCRSchema = z.object({
 export const ocrDataSchema = z.object({
   betA: singleBetOCRSchema,
   betB: singleBetOCRSchema,
-  gameDate: z.date(),
+  gameDate: z.date(), // ISO date for calendar component
+  gameDateFormatted: z.string().optional(), // DD-MM-YYYY format for display
   gameTime: z.string().optional(),
+  gameDateTime: z.string().optional(), // Combined DD-MM-YYYY HH:MM format
   sport: z.string().min(1, "Esporte é obrigatório"),
   league: z.string().min(1, "Liga é obrigatória"),
   totalProfitPercentage: z.string().refine((val) => !isNaN(Number(val)), "Porcentagem de lucro total deve ser um número válido"),
