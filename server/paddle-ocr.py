@@ -285,11 +285,12 @@ class BettingSlipOCR:
         return result
 
     def _parse_markdown_content_intelligent(self, markdown: str, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Intelligent parsing of Mistral.ai markdown content for betting data"""
+        """Intelligent parsing of Mistral.ai markdown content with specific extraction rules"""
         
         lines = markdown.split('\n')
         
         print(f"Processing {len(lines)} lines from Mistral.ai markdown", file=sys.stderr)
+        print(f"Full markdown content: {markdown}", file=sys.stderr)
         
         table_rows = []
         in_table = False
@@ -297,102 +298,160 @@ class BettingSlipOCR:
         for i, line in enumerate(lines):
             line = line.strip()
             
-            # Extract teams (look for "Team A - Team B" pattern)
-            if ' - ' in line and not '|' in line and not 'Casa' in line and not 'Chance' in line:
-                # Skip obvious non-team lines
-                skip_keywords = ['surebet', 'google', 'chrome', 'futebol', 'roi', 'total', 'mostrar', 'evento', 'aproximadamente']
-                if not any(keyword in line.lower() for keyword in skip_keywords):
-                    teams = line.split(' - ')
-                    if len(teams) == 2 and len(teams[0].strip()) > 2 and len(teams[1].strip()) > 2:
-                        result['betA']['teamA'] = teams[0].strip()
-                        result['betA']['teamB'] = teams[1].strip()
-                        result['betB']['teamA'] = teams[0].strip()
-                        result['betB']['teamB'] = teams[1].strip()
-                        print(f"Teams found: {teams[0].strip()} vs {teams[1].strip()}", file=sys.stderr)
+            # REGRA 1: Extrair ROI percentage (aceitar vírgulas e pontos - formato brasileiro)
+            roi_match = re.search(r'(\d+[,\.]\d+)%\s+ROI', line)
+            if roi_match:
+                # Normalizar para formato padrão (substituir vírgula por ponto)
+                percentage = roi_match.group(1).replace(',', '.')
+                result['totalProfitPercentage'] = f"{percentage}%"
+                print(f"ROI percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
             
-            # Extract sport and league (look for "Futebol / Country - League" pattern)
-            if '/' in line and ('futebol' in line.lower() or 'handebol' in line.lower() or 'tênis' in line.lower()):
-                parts = line.split('/')
-                if len(parts) >= 2:
-                    result['sport'] = parts[0].strip()
-                    league_part = parts[1].strip()
-                    if ' - ' in league_part:
-                        league_parts = league_part.split(' - ', 1)
-                        result['league'] = f"{league_parts[0].strip()} - {league_parts[1].strip()}"
-                    else:
-                        result['league'] = league_part
-                    print(f"Sport/League found: {result['sport']} / {result['league']}", file=sys.stderr)
-            
-            # Extract date and time (look for YYYY-MM-DD HH:MM pattern)
-            date_match = re.search(r'(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})', line)
-            if date_match:
-                date_str = date_match.group(1)
-                time_str = date_match.group(2)
+            # REGRA 2: Extrair times com Unicode (acentos) e hífens
+            # Aceitar qualquer letra Unicode, hífens, espaços para times brasileiros
+            teams_match = re.search(r'([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)\s*[–-]\s*([\w\s\-àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)\s+Futebol', line, re.IGNORECASE)
+            if teams_match:
+                team_a = teams_match.group(1).strip()
+                team_b = teams_match.group(2).strip()
                 
-                try:
-                    # Convert to DD-MM-YYYY format
-                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-                    formatted_date = date_obj.strftime('%d-%m-%Y')
-                    
-                    result['gameDate'] = date_str  # ISO for calendar
-                    result['gameTime'] = time_str
-                    result['gameDateFormatted'] = formatted_date  # DD-MM-YYYY for display
-                    result['gameDateTime'] = f"{formatted_date} {time_str}"  # Combined
-                    
-                    print(f"Date/Time found: {date_str} {time_str} -> {formatted_date} {time_str}", file=sys.stderr)
-                except ValueError:
-                    pass
+                # Validar se são times válidos (não palavras comuns)
+                invalid_words = ['surebet', 'google', 'chrome', 'mostrar', 'total', 'aposta', 'documento']
+                if (not any(word in team_a.lower() or word in team_b.lower() for word in invalid_words) 
+                    and len(team_a) > 2 and len(team_b) > 2):
+                    result['betA']['teamA'] = team_a
+                    result['betA']['teamB'] = team_b
+                    result['betB']['teamA'] = team_a
+                    result['betB']['teamB'] = team_b
+                    print(f"Teams extracted: {team_a} vs {team_b}", file=sys.stderr)
             
-            # Extract profit percentage (look for percentage not related to ROI)
-            if re.search(r'\d+\.\d+%', line) and 'roi' not in line.lower():
-                percentage_match = re.search(r'(\d+\.\d+%)', line)
-                if percentage_match:
-                    result['totalProfitPercentage'] = percentage_match.group(1)
-                    print(f"Profit percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
+            # REGRA 3: Extrair esporte e liga (formato: "Time A – Time B Futebol / País - Liga")
+            sport_match = re.search(r'Futebol\s*/\s*(.+)', line)
+            if sport_match:
+                result['sport'] = 'Futebol'
+                league_part = sport_match.group(1).strip()
+                result['league'] = league_part
+                print(f"Sport/League found: {result['sport']} / {result['league']}", file=sys.stderr)
             
-            # Detect table structure (markdown tables with |)
-            if '|' in line and ('casa' in line.lower() or 'chance' in line.lower() or 'aposta' in line.lower()):
+            # REGRA 4: Detectar início da tabela
+            if '|' in line and ('Chance' in line or 'Aposta' in line or 'Lucro' in line):
                 in_table = True
                 print(f"Table header detected: {line}", file=sys.stderr)
                 continue
             
-            # Extract table rows
+            # REGRA 5: Extrair dados da tabela (ignorar linhas de separação ---)
             if in_table and '|' in line and line.count('|') >= 3:
-                # Split by | and clean up
+                # Split por | e limpar
                 cells = [cell.strip() for cell in line.split('|') if cell.strip()]
-                if len(cells) >= 4:  # Casa, Chance, Aposta, Lucro
-                    table_rows.append(cells)
-                    print(f"Table row found: {cells}", file=sys.stderr)
+                
+                # IMPORTANTE: Ignorar linhas com apenas "---" (separadores markdown)
+                if cells and not all(cell == '---' or cell.startswith('---') for cell in cells):
+                    # Verificar se é uma linha de dados válida (primeira célula não vazia e não separador)
+                    if len(cells) >= 4 and cells[0] and not cells[0].startswith('---'):
+                        # Validação flexível: aceitar qualquer casa de apostas válida
+                        # Deve ter pelo menos 3 caracteres e não ser palavra comum
+                        first_cell = cells[0].lower()
+                        invalid_patterns = ['chance', 'aposta', 'lucro', 'casa', 'total', '---', '***']
+                        
+                        if (len(cells[0]) >= 3 and 
+                            not any(pattern in first_cell for pattern in invalid_patterns) and
+                            not first_cell.isdigit()):
+                            table_rows.append(cells)
+                            print(f"Valid table row found: {cells}", file=sys.stderr)
+                        else:
+                            print(f"Skipping invalid row (header/separator): {cells}", file=sys.stderr)
             
-            # Stop table processing if we hit non-table content
+            # Parar processamento da tabela se não há mais linhas com |
             if in_table and '|' not in line and line.strip() and not line.startswith('-'):
                 in_table = False
         
-        # Process table data
+        # REGRA 6: Processar dados da tabela com mapeamento correto
         if table_rows:
-            print(f"Processing {len(table_rows)} table rows", file=sys.stderr)
+            print(f"Processing {len(table_rows)} valid table rows", file=sys.stderr)
             
-            # First row -> betA, second row -> betB
-            if len(table_rows) >= 1:
-                row = table_rows[0]
-                if len(row) >= 4:
-                    result['betA']['bettingHouse'] = row[0]
-                    result['betA']['betType'] = row[1]
-                    result['betA']['odds'] = row[2]
-                    result['betA']['profit'] = row[3]
-                    print(f"BetA: {row[0]} - {row[1]} - {row[2]} - {row[3]}", file=sys.stderr)
-            
-            if len(table_rows) >= 2:
-                row = table_rows[1]
-                if len(row) >= 4:
-                    result['betB']['bettingHouse'] = row[0]
-                    result['betB']['betType'] = row[1]
-                    result['betB']['odds'] = row[2]
-                    result['betB']['profit'] = row[3]
-                    print(f"BetB: {row[0]} - {row[1]} - {row[2]} - {row[3]}", file=sys.stderr)
+            # Mapear primeira linha para betA, segunda para betB
+            for idx, row in enumerate(table_rows[:2]):  # Limitar a 2 apostas
+                print(f"Processing row {idx}: {row}", file=sys.stderr)
+                
+                bet_key = 'betA' if idx == 0 else 'betB'
+                
+                # Estrutura esperada da tabela: [Casa, Chance, Odds, ?, Stake, ?, ?, ?, Lucro]
+                if len(row) >= 3:
+                    result[bet_key]['bettingHouse'] = row[0]  # Casa de aposta
+                    result[bet_key]['betType'] = row[1]       # Tipo de aposta (Chance)
+                    result[bet_key]['odds'] = self._normalize_number(row[2])  # Odds (normalizar vírgulas)
+                    
+                    # Procurar stake (valor numérico brasileiro - aceitar vírgulas, R$, USD)
+                    stake_found = False
+                    for col_idx in range(3, len(row)):
+                        normalized_value = self._normalize_monetary_value(row[col_idx])
+                        if normalized_value and normalized_value != '0':
+                            result[bet_key]['stake'] = normalized_value
+                            stake_found = True
+                            print(f"Stake found for {bet_key}: {row[col_idx]} -> {normalized_value}", file=sys.stderr)
+                            break
+                    
+                    if not stake_found:
+                        result[bet_key]['stake'] = '0'
+                    
+                    # Lucro - procurar valores monetários válidos (da direita para esquerda)
+                    profit_found = False
+                    for col_idx in range(len(row) - 1, -1, -1):
+                        normalized_value = self._normalize_monetary_value(row[col_idx])
+                        if normalized_value and normalized_value != '0' and col_idx > 2:  # Não pegar odds como lucro
+                            # Evitar duplicar stake como profit
+                            if normalized_value != result[bet_key]['stake']:
+                                result[bet_key]['profit'] = normalized_value
+                                profit_found = True
+                                print(f"Profit found for {bet_key}: {row[col_idx]} -> {normalized_value}", file=sys.stderr)
+                                break
+                    
+                    if not profit_found:
+                        result[bet_key]['profit'] = '0'
+                
+                print(f"{bet_key}: Casa={result[bet_key]['bettingHouse']}, Tipo={result[bet_key]['betType']}, Odds={result[bet_key]['odds']}, Stake={result[bet_key]['stake']}, Lucro={result[bet_key]['profit']}", file=sys.stderr)
         
-        print("Intelligent markdown parsing completed", file=sys.stderr)
+        print("Intelligent markdown parsing with specific rules completed", file=sys.stderr)
         return result
+
+    def _normalize_number(self, value: str) -> str:
+        """Normalize Brazilian number format (replace comma with dot)"""
+        if not value:
+            return '0'
+        
+        # Remove spaces and normalize decimal separator
+        normalized = value.strip().replace(',', '.')
+        
+        # Check if it's a valid number
+        try:
+            float(normalized)
+            return normalized
+        except ValueError:
+            return value  # Return original if not a valid number
+
+    def _normalize_monetary_value(self, value: str) -> str:
+        """Normalize Brazilian monetary values (R$ 27,39 -> 27.39)"""
+        if not value:
+            return None
+        
+        # Remove currency symbols and spaces
+        cleaned = value.strip()
+        
+        # Remove common currency prefixes/suffixes
+        currency_patterns = [r'^R\$\s*', r'^USD\s*', r'^\$\s*', r'\s*USD$', r'\s*BRL$']
+        for pattern in currency_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        # Replace comma with dot for decimal separator
+        cleaned = cleaned.replace(',', '.')
+        
+        # Check if it's a valid number
+        try:
+            number = float(cleaned)
+            if number > 0:  # Only return positive values
+                return str(number)
+        except ValueError:
+            pass
+        
+        return None
 
     def parse_ocr_space_json(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
         """Parse OCR.space native JSON response using coordinate-based extraction"""
