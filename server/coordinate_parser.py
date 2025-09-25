@@ -143,60 +143,241 @@ def parse_teams_from_title(lines: List[Dict]) -> Tuple[str, str]:
     
     return "", ""
 
-def extract_betting_house_dynamic(text: str) -> Optional[str]:
-    """Extract betting house name using hybrid approach: known houses + dynamic detection"""
+def extract_betting_house_from_layout(text: str) -> Optional[str]:
+    """Robust betting house extraction supporting 300+ dynamic houses with contextual anchoring"""
     if not text:
         return None
     
-    # PHASE 1: Check known betting houses first (most reliable)
+    # Clean and normalize text, supporting diacritics
+    text = text.strip()
+    
+    # PHASE 1: Direct pattern matching for known houses (most reliable)
     known_houses = [
         'KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Betano', 'Sportingbet', 'BravoBet', 'Blaze', 
-        'Aposta1', 'Betnacional', 'SuperBet', 'VBet', 'MarjoSports', 'Betfast', '1xBet', 
-        'Rivalo', 'Betsson', 'LeoVegas', 'Betway', 'William Hill', 'Unibet', 'PokerStars',
-        'Bwin', 'Paddy Power', 'Ladbrokes', 'SkyBet', 'Coral', 'Betfair', 'BetVictor',
-        'ComeOn', 'NetBet', 'MrGreen', 'Bethard', 'Dafabet', '888sport', 'Marathonbet',
-        'Betstars', 'Interwetten', 'Titanbet', 'RedBet', 'NordicBet'
+        '1xBet', 'Rivalo', 'Betsson', 'LeoVegas', 'Betway', 'William Hill', 'Unibet', 'PokerStars',
+        'Bwin', 'Paddy Power', 'Ladbrokes', 'SkyBet', 'Coral', 'BetVictor', 'ComeOn', 'NetBet',
+        'MrGreen', 'Mr.Green', 'Bethard', 'Dafabet', '888sport', 'Marathonbet', 'Betstars',
+        'Interwetten', 'Titanbet', 'RedBet', 'NordicBet', 'Aposta1', 'Betnacional', 'SuperBet',
+        'VBet', 'MarjoSports', 'Betfast', '10bet', '188BET', 'bet.pt', 'Bet7K', 'Betsul',
+        'ApostasJá', 'Esportes da Sorte'
     ]
     
     for house in known_houses:
-        # Case insensitive check with word boundaries
         if re.search(rf'\b{re.escape(house)}\b', text, re.IGNORECASE):
             return house
     
-    # PHASE 2: Dynamic detection with strict criteria
-    # Pattern: Name followed by (BR), (UK), (Country code), etc. followed by betting data
-    house_pattern = r'([A-Za-z0-9]+(?:[A-Za-z0-9\s&._-]*[A-Za-z0-9])?)\s*\([A-Z0-9]{2,3}\)'
+    # PHASE 2: Contextual anchoring - find betting type tokens and extract house to the left
+    bet_type_anchors = [
+        r'\b(?:H[12]|DNB|1[º°]?\s*per[íi]odo|2[º°]?\s*per[íi]odo|Over|Under|Handicap|1X2|1\s*/\s*DNB)\b',
+        r'\b(?:Acima|Abaixo|Asian\s+Handicap|AH|Dupla\s+Chance|Ambas\s+Marcam|BTTS)\b',
+        r'\([+-]?\d+[.,]?\d*\)',  # Handicap values like (+1), (-0.5)
+    ]
     
-    match = re.search(house_pattern, text)
-    if match:
-        house_name = match.group(1).strip()
+    for anchor_pattern in bet_type_anchors:
+        anchor_match = re.search(anchor_pattern, text, re.IGNORECASE)
+        if anchor_match:
+            # Extract text before the anchor as potential house
+            before_anchor = text[:anchor_match.start()].strip()
+            house_candidate = extract_house_from_prefix(before_anchor)
+            if house_candidate:
+                return house_candidate
+    
+    # PHASE 3: Broad dynamic detection with expanded tokenization
+    # Improved tokenization supporting digit-first, dots, hyphens, diacritics
+    tokens = re.findall(r'\S+', text)
+    if len(tokens) < 3:
+        return None
+    
+    # Find first odds/stake token
+    first_financial_index = None
+    for i, token in enumerate(tokens):
+        if re.search(r'\d+\.\d+|\d{2,}[.,]?\d*|USD|BRL|EUR|\$|R\$|€', token, re.IGNORECASE):
+            first_financial_index = i
+            break
+    
+    if first_financial_index is None or first_financial_index < 1:
+        return None
+    
+    # Collect potential house tokens with relaxed rules
+    house_tokens = []
+    for i in range(min(5, first_financial_index)):  # Allow up to 5 tokens
+        token = tokens[i]
         
-        # Filter out false positives more aggressively
-        false_positives = {
-            'USD', 'BRL', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK',
-            'Futebol', 'Football', 'Basquete', 'Basketball', 'Tenis', 'Tennis',
-            'Brasil', 'Brazil', 'Serie', 'Liga', 'Premier', 'Championship',
-            'Chance', 'Aposta', 'Lucro', 'Evento', 'Total', 'Mostrar'
-        }
-        
-        # Additional filters for team names and common words
+        # Enhanced team filtering - prevent false positives
         team_patterns = [
-            r'^[A-Z][\w-]+-[A-Z]{2}$',  # Pattern like "Novorizontino-SP"
-            r'^\w+\s+\w+$'               # Two word combinations that might be teams
+            r'^[A-Z][\w-]+-[A-Z]{2}$',                    # City-State: "Novorizontino-SP"
+            r'^[A-Z][\w\s]+-[A-Z][\w\s]+$',               # Team-Team: "Real-Madrid"
+            r'^\w+\s*(FC|CF|AC|AS|United|City|Rovers)$',   # Club suffixes
+            r'^(FC|AC|AS)\s+\w+',                         # Club prefixes
         ]
         
-        if (house_name.upper() not in [fp.upper() for fp in false_positives] and 
-            not any(re.match(pattern, house_name) for pattern in team_patterns) and
-            len(house_name) >= 3 and len(house_name) <= 20):
-            
-            # Must be followed by betting context (odds, stakes, profit indicators)
-            remaining_text = text[match.end():match.end()+100]
-            betting_indicators = [r'\d+\.\d+', r'\d+[.,]\d+', 'USD', 'BRL', 'EUR']
-            
-            if any(re.search(pattern, remaining_text) for pattern in betting_indicators):
-                return house_name
+        if any(re.match(pattern, token, re.IGNORECASE) for pattern in team_patterns):
+            continue
+        
+        # Skip obvious non-house words
+        skip_words = {
+            'Chance', 'Aposta', 'Lucro', 'Evento', 'Total', 'Mostrar', 'Show', 'Event',
+            'vs', 'x', 'contra', 'against', 'Futebol', 'Football', 'Brasil', 'Brazil',
+            'Novorizontino', 'Vila', 'Nova', 'ROI', 'Profit'
+        }
+        if token in skip_words:
+            continue
+        
+        # EXPANDED TOKENIZATION: Support digit-first, dots, hyphens, diacritics, country codes
+        # But be more strict to avoid false positives like "ds"
+        if re.match(r'^[A-Za-z0-9][A-Za-z0-9._áàâãéèêíìîóòôõúùûçñü-]{2,20}(?:\([A-Z]{2,3}\))?$', token, re.IGNORECASE):
+            house_tokens.append(token)
+        elif re.match(r'^\([A-Z]{2,3}\)$', token):  # Standalone country code
+            house_tokens.append(token)
+        elif re.match(r'^[A-Za-z0-9]{3,20}$', token):  # Simple alnum, min 3 chars
+            house_tokens.append(token)
+        else:
+            # Don't break on icons/flags, continue collecting if reasonable
+            if len(token) <= 2 and i < 2:  # Allow very short tokens only at start
+                continue
+            else:
+                break
+    
+    if not house_tokens:
+        return None
+    
+    # Cleanup and validate house name
+    house_name = ' '.join(house_tokens)
+    house_name = re.sub(r'\s*\([A-Z]{2,3}\)\s*$', '', house_name).strip()  # Remove country suffix
+    
+    # More strict validation - reject very short names
+    if len(house_name) < 3 or len(house_name) > 25:
+        return None
+    
+    # Additional team name protection
+    forbidden_names = {
+        'Novorizontino', 'Vila', 'Nova', 'Real', 'Barcelona', 'Madrid', 'United', 
+        'City', 'Arsenal', 'Chelsea', 'Liverpool', 'Manchester', 'Tottenham',
+        'ROI', 'Chance', 'Profit', 'Lucro', 'Total', 'Brasil', 'Brazil'
+    }
+    if house_name in forbidden_names:
+        return None
+    
+    # Must have strong betting context
+    has_strong_context = bool(re.search(r'\b\d+\.\d{2,3}\b|\b(?:USD|BRL|EUR|usd)\b|\b\d+[.,]\d+\b', text, re.IGNORECASE))
+    if not has_strong_context:
+        return None
+    
+    return house_name
+
+def extract_house_from_prefix(text_prefix: str) -> Optional[str]:
+    """Extract house name from text prefix (text before betting type anchor)"""
+    if not text_prefix or len(text_prefix) < 2:
+        return None
+    
+    # Split and take the last meaningful tokens as potential house
+    tokens = text_prefix.split()
+    if not tokens:
+        return None
+    
+    # Take last 1-3 tokens as house candidate
+    house_tokens = tokens[-3:] if len(tokens) >= 3 else tokens
+    house_candidate = ' '.join(house_tokens).strip()
+    
+    # Remove country codes and clean
+    house_candidate = re.sub(r'\s*\([A-Z]{2,3}\)\s*$', '', house_candidate).strip()
+    
+    # Basic validation
+    if (len(house_candidate) >= 2 and len(house_candidate) <= 25 and 
+        not re.match(r'^[A-Z][\w-]+-[A-Z]{2}$', house_candidate) and  # Not team pattern
+        house_candidate not in {'ROI', 'Chance', 'Profit', 'Lucro', 'Novorizontino', 'Vila'}):
+        return house_candidate
     
     return None
+
+def group_bet_lines_by_layout(lines: List[Dict]) -> List[Dict]:
+    """Group lines into betting rows using layout-based detection"""
+    if not lines:
+        return []
+    
+    # Sort lines by Y position to process top to bottom
+    sorted_lines = sorted(lines, key=lambda x: x.get('avg_y', 0))
+    
+    bet_groups = []
+    current_group = []
+    last_y = None
+    
+    for line in sorted_lines:
+        line_text = line.get('combined_text', '').strip()
+        current_y = line.get('avg_y', 0)
+        
+        # Skip empty lines
+        if not line_text:
+            continue
+        
+        # Check if this line contains betting data (odds, stakes, house patterns)
+        has_betting_data = bool(re.search(r'\d+\.\d+|\d+[.,]\d+|USD|BRL|EUR|\$|R\$|€', line_text, re.IGNORECASE))
+        
+        if not has_betting_data:
+            # If we have a current group, save it before starting potential new section
+            if current_group:
+                combined_text = ' '.join([g.get('combined_text', '') for g in current_group])
+                house = extract_betting_house_from_layout(combined_text)
+                if house:  # Only save if we can extract a house
+                    bet_groups.append({
+                        'combined_text': combined_text,
+                        'lines': current_group,
+                        'house': house
+                    })
+                current_group = []
+            last_y = current_y
+            continue
+        
+        # Check if we should group with previous line based on Y distance
+        should_group = (
+            current_group and 
+            last_y is not None and 
+            abs(current_y - last_y) <= 30  # Increased tolerance for varying DPI
+        )
+        
+        if should_group:
+            current_group.append(line)
+        else:
+            # Save previous group if it exists
+            if current_group:
+                combined_text = ' '.join([g.get('combined_text', '') for g in current_group])
+                house = extract_betting_house_from_layout(combined_text)
+                if house:  # Only save if we can extract a house
+                    bet_groups.append({
+                        'combined_text': combined_text,
+                        'lines': current_group,
+                        'house': house
+                    })
+            
+            # Start new group
+            current_group = [line]
+        
+        last_y = current_y
+    
+    # Process final group
+    if current_group:
+        combined_text = ' '.join([g.get('combined_text', '') for g in current_group])
+        house = extract_betting_house_from_layout(combined_text)
+        if house:  # Only save if we can extract a house
+            bet_groups.append({
+                'combined_text': combined_text,
+                'lines': current_group,
+                'house': house
+            })
+    
+    # Validate and clean groups
+    valid_groups = []
+    for group in bet_groups:
+        combined_text = group['combined_text']
+        
+        # Must contain both odds-like and stake-like numbers
+        has_odds = bool(re.search(r'\b\d+\.\d+\b', combined_text))
+        has_financial = bool(re.search(r'\d+[.,]?\d*\b.*(?:USD|BRL|EUR|\$|R\$|€|usd)', combined_text, re.IGNORECASE))
+        
+        if has_odds and group.get('house'):
+            valid_groups.append(group)
+    
+    return valid_groups
 
 def parse_sport_league_near_teams(lines: List[Dict], teams_line_index: int) -> Tuple[str, str]:
     """Parse sport and league from lines near the teams line"""
@@ -217,57 +398,46 @@ def parse_sport_league_near_teams(lines: List[Dict], teams_line_index: int) -> T
     return "", ""
 
 def group_bet_lines(lines: List[Dict]) -> List[Dict]:
-    """Group betting house lines with adjacent lines for complete bet information"""
-    betting_groups = []
+    """Group lines into betting rows using robust layout-based detection"""
+    if not lines:
+        return []
     
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        full_text = line.get('full_text', '')
+    # Convert lines format for layout-based grouping
+    converted_lines = []
+    for line in lines:
+        # Calculate average Y position from blocks
+        blocks = line.get('blocks', [])
+        if blocks:
+            avg_y = sum(block.get('top', 0) for block in blocks) / len(blocks)
+        else:
+            avg_y = 0
         
-        # Dynamically identify betting house from text using pattern
-        house_found = extract_betting_house_dynamic(full_text)
-        
-        if house_found:
-            # Create a group starting with the house line
-            group = {
-                'house': house_found,
-                'main_line': line,
-                'all_lines': [line],
-                'combined_text': full_text,
-                'top_position': min(block.get('top', 0) for block in line.get('blocks', [{'top': 0}]))
-            }
+        converted_lines.append({
+            'combined_text': line.get('full_text', ''),
+            'avg_y': avg_y,
+            'original_line': line
+        })
+    
+    # Use layout-based grouping
+    layout_groups = group_bet_lines_by_layout(converted_lines)
+    
+    # Convert back to original format
+    betting_groups = []
+    for group in layout_groups:
+        if group.get('house'):
+            # Find original lines
+            original_lines = [line_data['original_line'] for line_data in group['lines']]
             
-            # Look for adjacent lines within Y threshold (±25 pixels) but exclude other betting houses
-            main_top = group['top_position']
-            
-            # Check previous line (only if it doesn't contain a betting house)
-            if i > 0:
-                prev_line = lines[i-1]
-                prev_text = prev_line.get('full_text', '')
-                prev_top = min(block.get('top', 0) for block in prev_line.get('blocks', [{'top': 0}]))
-                
-                # Don't combine if previous line contains another betting house
-                has_house = extract_betting_house_dynamic(prev_text) is not None
-                if not has_house and abs(prev_top - main_top) <= 25:
-                    group['all_lines'].insert(0, prev_line)
-                    group['combined_text'] = prev_text + ' ' + group['combined_text']
-            
-            # Check next line (only if it doesn't contain a betting house)
-            if i + 1 < len(lines):
-                next_line = lines[i+1]
-                next_text = next_line.get('full_text', '')
-                next_top = min(block.get('top', 0) for block in next_line.get('blocks', [{'top': 0}]))
-                
-                # Don't combine if next line contains another betting house
-                has_house = extract_betting_house_dynamic(next_text) is not None
-                if not has_house and abs(next_top - main_top) <= 25:
-                    group['all_lines'].append(next_line)
-                    group['combined_text'] += ' ' + next_text
-            
-            betting_groups.append(group)
-        
-        i += 1
+            betting_groups.append({
+                'house': group['house'],
+                'main_line': original_lines[0] if original_lines else {},
+                'all_lines': original_lines,
+                'combined_text': group['combined_text'],
+                'top_position': min(
+                    min(block.get('top', 0) for block in line.get('blocks', [{'top': 0}]))
+                    for line in original_lines
+                ) if original_lines else 0
+            })
     
     # Sort groups by Y position to ensure consistent betA/betB assignment
     betting_groups.sort(key=lambda g: g['top_position'])
@@ -311,7 +481,7 @@ def extract_bet_type_from_group(combined_text: str) -> str:
     
     # Fallback: extract text between any betting house pattern and first large number
     # Get any potential house name from the text first
-    potential_house = extract_betting_house_dynamic(text)
+    potential_house = extract_betting_house_from_layout(text)
     if potential_house:
         # Create dynamic pattern for this specific house
         house_match = re.search(rf'{re.escape(potential_house)}\s*\([^)]*\)\s*([^0-9]+?)(?:\d+\.\d+|\d{{3,}})', text, re.IGNORECASE)
