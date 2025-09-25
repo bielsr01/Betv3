@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
-    "google-cloud-vision>=3.10.2",
+    "azure-cognitiveservices-vision-computervision>=0.9.1",
     "numpy>=2.3.3",
     "opencv-python>=4.11.0.86",
     "pandas>=2.3.2",

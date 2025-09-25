@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Google Cloud Vision API implementation for OCR and structured data extraction
+Azure Computer Vision API implementation for OCR and structured data extraction
 Optimized for betting slip data extraction with advanced text detection
 """
 
@@ -12,39 +12,35 @@ import re
 from typing import Dict, List, Any, Optional
 from io import BytesIO
 from PIL import Image
-from google.cloud import vision
-from google.cloud.vision_v1 import types
+from azure.cognitiveservices.vision.computervision import ComputerVisionClient
+from azure.cognitiveservices.vision.computervision.models import OperationStatusCodes
+from azure.cognitiveservices.vision.computervision.models import VisualFeatureTypes
+from msrest.authentication import CognitiveServicesCredentials
+import time
 
 class BettingSlipOCR:
     def __init__(self):
-        """Initialize Google Cloud Vision API client"""
-        print("Initializing Google Cloud Vision API...", file=sys.stderr)
+        """Initialize Azure Computer Vision API client"""
+        print("Initializing Azure Computer Vision API...", file=sys.stderr)
         
         try:
-            # Set up credentials from environment variable
-            credentials_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-            if credentials_json:
-                # Parse JSON credentials and set up authentication
-                import tempfile
-                import json
-                from google.oauth2 import service_account
-                
-                # Parse the JSON credentials
-                credentials_data = json.loads(credentials_json)
-                
-                # Create credentials object
-                credentials = service_account.Credentials.from_service_account_info(credentials_data)
-                
-                # Initialize Vision API client with credentials
-                self.client = vision.ImageAnnotatorClient(credentials=credentials)
-                print("Google Cloud Vision API initialized successfully with provided credentials", file=sys.stderr)
+            # Get credentials from environment variables
+            subscription_key = os.environ.get('AZURE_COMPUTER_VISION_KEY')
+            endpoint = os.environ.get('AZURE_COMPUTER_VISION_ENDPOINT')
+            
+            if subscription_key and endpoint:
+                # Initialize Azure Computer Vision client
+                self.client = ComputerVisionClient(
+                    endpoint=endpoint,
+                    credentials=CognitiveServicesCredentials(subscription_key)
+                )
+                print("Azure Computer Vision API initialized successfully", file=sys.stderr)
             else:
-                # Try default credentials (for local development)
-                self.client = vision.ImageAnnotatorClient()
-                print("Google Cloud Vision API initialized with default credentials", file=sys.stderr)
+                print("Azure credentials not found, using fallback mode", file=sys.stderr)
+                self.client = None
                 
         except Exception as e:
-            print(f"Failed to initialize Google Vision API: {e}", file=sys.stderr)
+            print(f"Failed to initialize Azure Computer Vision API: {e}", file=sys.stderr)
             print("Using fallback mode", file=sys.stderr)
             self.client = None
 
@@ -65,77 +61,64 @@ class BettingSlipOCR:
             raise
 
     def extract_text_with_coordinates(self, image_bytes: bytes) -> List[Dict]:
-        """Extract text using Google Cloud Vision API"""
+        """Extract text using Azure Computer Vision API"""
         try:
             if self.client is None:
-                print("Google Vision API not available, using fallback", file=sys.stderr)
+                print("Azure Computer Vision API not available, using fallback", file=sys.stderr)
                 return self._fallback_text_extraction()
             
-            print("Using Google Cloud Vision API for text extraction", file=sys.stderr)
+            print("Using Azure Computer Vision API for text extraction", file=sys.stderr)
             
-            # Create Vision API image object
-            image = vision.Image(content=image_bytes)
+            # Perform OCR using read API (better for dense text)
+            read_operation = self.client.read_in_stream(
+                image=BytesIO(image_bytes),
+                raw=True
+            )
             
-            # Perform document text detection (better for structured documents)
-            response = self.client.document_text_detection(image=image)
-            document = response.full_text_annotation
+            # Get operation location and ID
+            operation_location = read_operation.headers["Operation-Location"]
+            operation_id = operation_location.split("/")[-1]
+            
+            # Wait for the operation to complete
+            while True:
+                read_result = self.client.get_read_result(operation_id)
+                if read_result.status not in [OperationStatusCodes.running]:
+                    break
+                time.sleep(0.1)
             
             extracted_data = []
             
-            if document and document.pages:
-                for page in document.pages:
-                    for block in page.blocks:
-                        for paragraph in block.paragraphs:
-                            for word in paragraph.words:
-                                # Combine symbols to form word text
-                                word_text = ''.join([symbol.text for symbol in word.symbols])
+            if read_result.status == OperationStatusCodes.succeeded:
+                for text_result in read_result.analyze_result.read_results:
+                    for line in text_result.lines:
+                        for word in line.words:
+                            # Extract bounding box coordinates
+                            bbox = word.bounding_box
+                            if len(bbox) >= 8:  # Azure returns 8 coordinates [x1,y1,x2,y2,x3,y3,x4,y4]
+                                # Convert to list of [x,y] points
+                                vertices = [[bbox[i], bbox[i+1]] for i in range(0, 8, 2)]
                                 
-                                # Calculate word bounding box
-                                vertices = word.bounding_box.vertices
-                                if len(vertices) >= 4:
-                                    # Calculate center point
-                                    x_coords = [v.x for v in vertices]
-                                    y_coords = [v.y for v in vertices]
-                                    center_x = sum(x_coords) / len(x_coords)
-                                    center_y = sum(y_coords) / len(y_coords)
-                                    
-                                    # Calculate confidence (average of symbol confidences)
-                                    confidences = [symbol.confidence for symbol in word.symbols if hasattr(symbol, 'confidence')]
-                                    confidence = sum(confidences) / len(confidences) if confidences else 0.9
-                                    
-                                    extracted_data.append({
-                                        'text': word_text,
-                                        'confidence': confidence,
-                                        'center': {'x': center_x, 'y': center_y},
-                                        'bbox': [[v.x, v.y] for v in vertices]
-                                    })
-            
-            # If no structured data found, try basic text detection
-            if not extracted_data:
-                print("No document structure found, trying basic text detection", file=sys.stderr)
-                response = self.client.text_detection(image=image)
-                texts = response.text_annotations
+                                # Calculate center point
+                                x_coords = [coord[0] for coord in vertices]
+                                y_coords = [coord[1] for coord in vertices]
+                                center_x = sum(x_coords) / len(x_coords)
+                                center_y = sum(y_coords) / len(y_coords)
+                                
+                                extracted_data.append({
+                                    'text': word.text,
+                                    'confidence': word.confidence if hasattr(word, 'confidence') else 0.9,
+                                    'center': {'x': center_x, 'y': center_y},
+                                    'bbox': vertices
+                                })
                 
-                for text in texts[1:]:  # Skip the first one (full text)
-                    vertices = text.bounding_poly.vertices
-                    if len(vertices) >= 4:
-                        x_coords = [v.x for v in vertices]
-                        y_coords = [v.y for v in vertices]
-                        center_x = sum(x_coords) / len(x_coords)
-                        center_y = sum(y_coords) / len(y_coords)
-                        
-                        extracted_data.append({
-                            'text': text.description,
-                            'confidence': 0.9,  # Default confidence
-                            'center': {'x': center_x, 'y': center_y},
-                            'bbox': [[v.x, v.y] for v in vertices]
-                        })
-            
-            print(f"Extracted {len(extracted_data)} text elements", file=sys.stderr)
-            return extracted_data
+                print(f"Extracted {len(extracted_data)} text elements", file=sys.stderr)
+                return extracted_data
+            else:
+                print(f"OCR operation failed with status: {read_result.status}", file=sys.stderr)
+                return self._fallback_text_extraction()
             
         except Exception as e:
-            print(f"Error in Google Vision API text extraction: {e}", file=sys.stderr)
+            print(f"Error in Azure Computer Vision API text extraction: {e}", file=sys.stderr)
             return self._fallback_text_extraction()
 
     def _fallback_text_extraction(self) -> List[Dict]:
@@ -169,36 +152,33 @@ class BettingSlipOCR:
         """Extract table structure using coordinate-based grouping (simpler approach)"""
         try:
             if self.client is None:
-                print("Google Vision API not available, skipping table detection", file=sys.stderr)
+                print("Azure Computer Vision API not available, skipping table detection", file=sys.stderr)
                 return []
                 
-            print("Using Google Vision API for simple table extraction", file=sys.stderr)
+            print("Using Azure Computer Vision API for simple table extraction", file=sys.stderr)
             
-            # Get text with coordinates using basic text detection
-            image = vision.Image(content=image_bytes)
-            response = self.client.text_detection(image=image)
-            texts = response.text_annotations
+            # Get text with coordinates using Azure Read API
+            text_regions = self.extract_text_with_coordinates(image_bytes)
             
-            if not texts:
+            if not text_regions:
                 return []
             
-            # Skip the first result (full text) and work with individual words
+            # Convert Azure text regions to word_boxes format for compatibility
             word_boxes = []
-            for text in texts[1:]:
-                vertices = text.bounding_poly.vertices
-                if len(vertices) >= 4:
-                    # Calculate bounding box
-                    x_coords = [v.x for v in vertices]
-                    y_coords = [v.y for v in vertices]
+            for text_region in text_regions:
+                if text_region.get('bbox') and len(text_region['bbox']) >= 4:
+                    # Calculate bounding box from Azure bbox format
+                    x_coords = [point[0] for point in text_region['bbox']]
+                    y_coords = [point[1] for point in text_region['bbox']]
                     
                     word_boxes.append({
-                        'text': text.description,
+                        'text': text_region['text'],
                         'x': min(x_coords),
                         'y': min(y_coords),
                         'width': max(x_coords) - min(x_coords),
                         'height': max(y_coords) - min(y_coords),
-                        'center_x': sum(x_coords) / len(x_coords),
-                        'center_y': sum(y_coords) / len(y_coords)
+                        'center_x': text_region['center']['x'],
+                        'center_y': text_region['center']['y']
                     })
             
             # Group words into rows based on Y coordinate (simple table simulation)
@@ -268,7 +248,7 @@ class BettingSlipOCR:
     def analyze_betting_slip(self, base64_image: str) -> Dict[str, Any]:
         """Main function to analyze betting slip and extract structured data"""
         try:
-            print("Starting Google Vision API betting slip analysis...", file=sys.stderr)
+            print("Starting Azure Computer Vision API betting slip analysis...", file=sys.stderr)
             
             # Decode image to bytes
             image_bytes = self.decode_base64_image(base64_image)
@@ -278,7 +258,7 @@ class BettingSlipOCR:
             text_data = self.extract_text_with_coordinates(image_bytes)
             print(f"Extracted {len(text_data)} text regions", file=sys.stderr)
             
-            # Extract table structure (currently not used with Vision API)
+            # Extract table structure using Azure Computer Vision API
             table_data = self.extract_table_structure(image_bytes)
             print(f"Found {len(table_data)} structured regions", file=sys.stderr)
             
