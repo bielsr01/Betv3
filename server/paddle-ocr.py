@@ -344,58 +344,64 @@ class BettingSlipOCR:
         return result
 
     def _extract_team_names(self, text_lines: List[str]) -> Optional[Dict[str, str]]:
-        """Extract team names using robust patterns for complex team names"""
-        for line in text_lines:
-            line_clean = line.strip()
-            
-            # Skip obvious non-team lines
-            if any(skip in line_clean.lower() for skip in ['surebet', 'google', 'chrome', 'evento', 'futebol', 'apostas', 'roi', 'chance', 'lucro', 'total:', 'mostrar', 'use', 'arredondar', 'levar']):
-                continue
-            
-            # Enhanced patterns for team name extraction
-            team_patterns = [
-                # Pattern for complex teams like "Chelsea FC - Brighton & Hove Albion FC"
-                r'^([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion|FC|CF)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion|FC|CF)?)',
-                # Pattern for simpler teams like "Lille - Lyon"
-                r'^([A-Za-zÀ-ÿ]{3,}(?:\s+[A-Za-zÀ-ÿ]+)*)\s*-\s*([A-Za-zÀ-ÿ]{3,}(?:\s+[A-Za-zÀ-ÿ]+)*)',
-                # Pattern with percentage at end "TeamA - TeamB 1.59%"
-                r'^([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion)?)\s+[\d.]+\s*%'
-            ]
-            
-            for pattern in team_patterns:
-                match = re.search(pattern, line_clean, re.IGNORECASE)
-                if match:
-                    teamA = match.group(1).strip()
-                    teamB = match.group(2).strip()
-                    
-                    # Validate team names (avoid single letters, numbers, etc.)
-                    if len(teamA) >= 3 and len(teamB) >= 3 and teamA != teamB:
-                        return {
-                            'teamA': teamA,
-                            'teamB': teamB
-                        }
+        """Extract team names using robust patterns - reconstruct logical lines from fragmented Azure output"""
         
+        # Step 1: Reconstruct logical lines from fragmented individual words
+        reconstructed_text = ' '.join(text_lines)
+        
+        # Step 2: Look for team vs team patterns in the reconstructed text - supports real-world team names
+        team_patterns = [
+            # Pattern for teams with percentage "Lille - Lyon 2.50%" or "RB Leipzig - Bayern 1.50%"
+            r'([A-Za-zÀ-ÿ]+(?:[-\'\s]+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:[-\'\s]+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion)?)\s+(\d+\.\d+)\s*%',
+            # Pattern for complex teams "Chelsea FC - Brighton & Hove Albion FC" or "Paris Saint-Germain - Real Madrid"
+            r'([A-Za-zÀ-ÿ]+(?:[-\'\s]+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion|FC|CF)?)\s*-\s*([A-Za-zÀ-ÿ]+(?:[-\'\s]+[A-Za-zÀ-ÿ&]+)*(?:\s+FC|CF|SC|AC|United|City|Town|Athletic|Albion|FC|CF)?)',
+            # Simple pattern for basic teams "Lille - Lyon" or "LA Galaxy - NY Red Bulls"
+            r'([A-Za-zÀ-ÿ]{2,}(?:[-\'\s]+[A-Za-zÀ-ÿ]+)*)\s*-\s*([A-Za-zÀ-ÿ]{2,}(?:[-\'\s]+[A-Za-zÀ-ÿ]+)*)'
+        ]
+        
+        for j, pattern in enumerate(team_patterns):
+            match = re.search(pattern, reconstructed_text, re.IGNORECASE)
+            if match:
+                teamA = match.group(1).strip()
+                teamB = match.group(2).strip()
+                
+                # Filter out obvious non-teams
+                non_teams = ['surebet', 'google', 'chrome', 'evento', 'futebol', 'apostas', 'roi', 'chance', 'lucro', 'total', 'mostrar', 'use', 'arredondar', 'levar', 'pt', 'dias', 'br', 'usd', 'aposta']
+                
+                # More flexible validation for real-world team names (accept teams with 2+ characters)
+                if (len(teamA) >= 2 and len(teamB) >= 2 and teamA != teamB and
+                    not any(word.lower() in teamA.lower() for word in non_teams) and
+                    not any(word.lower() in teamB.lower() for word in non_teams) and
+                    not teamA.lower().isdigit() and not teamB.lower().isdigit()):
+                    
+                    return {
+                        'teamA': teamA,
+                        'teamB': teamB
+                    }
         return None
 
     def _extract_league_info(self, text_lines: List[str]) -> Optional[str]:
-        """Extract league information from text lines"""
-        for line in text_lines:
-            line_clean = line.strip()
-            
-            # Look for sport/league pattern like "Futebol / Inglaterra - Premier League"
-            league_patterns = [
-                r'Futebol\s*/\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)',
-                r'([A-Za-zÀ-ÿ]+)\s*-\s*(Premier\s+League|Ligue\s+\d+|Championship|Serie\s+A|Bundesliga|La\s+Liga|College)',
-                r'([A-Za-zÀ-ÿ]+)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)'
-            ]
-            
-            for pattern in league_patterns:
-                match = re.search(pattern, line_clean, re.IGNORECASE)
-                if match and not any(skip in line_clean.lower() for skip in ['surebet', 'google', 'chrome', 'roi']):
-                    country = match.group(1).strip()
-                    league = match.group(2).strip()
-                    return f"{country} - {league}"
+        """Extract league information using text reconstruction from fragmented Azure output"""
         
+        # Reconstruct text for league pattern matching
+        reconstructed_text = ' '.join(text_lines)
+        
+        # Look for sport/league patterns like "Futebol / França - Ligue 1"
+        league_patterns = [
+            r'Futebol\s*/\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)',
+            r'([A-Za-zÀ-ÿ]+)\s*-\s*(Premier\s+League|Ligue\s+\d+|Championship|Serie\s+A|Bundesliga|La\s+Liga|College)',
+            r'([A-Za-zÀ-ÿ]+)\s*-\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)'
+        ]
+        
+        for pattern in league_patterns:
+            match = re.search(pattern, reconstructed_text, re.IGNORECASE)
+            if match and not any(skip in match.group(0).lower() for skip in ['surebet', 'google', 'chrome', 'roi', 'evento', 'apostas']):
+                country = match.group(1).strip()
+                league = match.group(2).strip()
+                
+                # Additional validation to ensure we have real league info
+                if len(country) >= 3 and len(league) >= 3 and country != league:
+                    return f"{country} - {league}"
         return None
 
     def _extract_teams_and_percentage(self, lines: List[str]) -> Optional[Dict[str, str]]:
