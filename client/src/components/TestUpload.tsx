@@ -77,14 +77,14 @@ const TestUpload = () => {
 
       toast({
         title: 'Sucesso!',
-        description: 'Imagem processada com OCR.space',
+        description: 'Imagem processada com Mistral OCR',
       });
 
     } catch (error) {
       console.error('OCR processing failed:', error);
       toast({
         title: 'Erro no processamento',
-        description: 'Falha ao processar imagem com OCR.space. Tente novamente.',
+        description: 'Falha ao processar imagem com Mistral OCR. Tente novamente.',
         variant: 'destructive'
       });
     } finally {
@@ -125,9 +125,9 @@ const TestUpload = () => {
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Teste Upload OCR.space</h1>
+        <h1 className="text-3xl font-bold mb-2">Teste Upload Mistral OCR</h1>
         <p className="text-muted-foreground">
-          Teste o OCR.space diretamente - resultado 100% original sem formatação
+          Teste o Mistral OCR diretamente - texto real extraído sem formatação
         </p>
       </div>
 
@@ -163,7 +163,7 @@ const TestUpload = () => {
             {isProcessing ? (
               <div className="flex flex-col items-center space-y-4">
                 <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                <p className="text-lg font-medium">Processando com OCR.space...</p>
+                <p className="text-lg font-medium">Processando com Mistral OCR...</p>
               </div>
             ) : (
               <div className="flex flex-col items-center space-y-4">
@@ -198,7 +198,7 @@ const TestUpload = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Resultado RAW do OCR.space
+              Texto Extraído do Mistral OCR
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -206,7 +206,7 @@ const TestUpload = () => {
               value={rawResult}
               readOnly
               className="min-h-96 font-mono text-sm"
-              placeholder="O resultado RAW do OCR.space aparecerá aqui..."
+              placeholder="O texto extraído do Mistral OCR aparecerá aqui..."
               data-testid="textarea-raw-result"
             />
             <div className="mt-4 flex gap-2">
