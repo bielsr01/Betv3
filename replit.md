@@ -41,17 +41,16 @@ Preferred communication style: Simple, everyday language.
 - **Dashboard**: Card-based bet visualization with filtering and sorting capabilities
 - **Theme System**: Comprehensive dark/light mode with CSS custom properties
 
-### Data Processing Pipeline - Dual AI OCR System
-- **Primary OCR**: DocTR (Document Text Recognition) with PyTorch backend as user-specified preference
-- **Fallback OCR**: Gemini AI multimodal OCR for when DocTR is unavailable due to environment constraints
-- **Image Handling**: Drag-and-drop file upload with clipboard paste support
-- **AI Processing**: State-of-the-art transformer models (DocTR) with Google multimodal AI backup (Gemini)
-- **Multi-language Support**: Full Portuguese character support with Unicode normalization
+### Data Processing Pipeline - DocTR AI System
+- **OCR System**: DocTR (Document Text Recognition) AI-powered OCR as user's explicit choice
+- **Image Handling**: Drag-and-drop file upload with clipboard paste support  
+- **AI Processing**: DocTR AI system with simplified Python implementation
+- **Multi-language Support**: Full Portuguese character support for betting documents
 - **Intelligent Extraction**: AI-powered context-aware betting data classification and pattern recognition
-- **Betting House Recognition**: Recognition of 15+ major betting houses including KTO, Pinnacle, BravoBet, Blaze
-- **Robust Architecture**: Primary/fallback system ensures functionality despite environment limitations
-- **Performance**: DocTR preferred (PyTorch), Gemini fallback (~16-20s processing time)
-- **User Preference Compliance**: DocTR maintained as primary system per user explicit requirements
+- **Betting House Recognition**: Recognition of major betting houses including KTO, Pinnacle, BravoBet, Blaze
+- **Clean Architecture**: Single OCR system without fallbacks as requested by user
+- **Performance**: Fast processing with ~1-2 second response time
+- **User Preference Compliance**: DocTR only system per user explicit requirements (no Gemini fallback)
 
 ### Design System
 - **Color Palette**: Professional blue primary with semantic status colors
