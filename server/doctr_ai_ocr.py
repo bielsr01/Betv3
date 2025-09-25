@@ -298,3 +298,66 @@ doctr_ocr = DocTRAIOCR()
 def extract_betting_data(image_data: bytes) -> Dict[str, Any]:
     """Main entry point for DocTR db_mobilenet_v3_large extraction"""
     return doctr_ocr.extract_betting_data_ai(image_data)
+
+# Command line interface for API calls
+if __name__ == "__main__":
+    import json
+    import sys
+    import base64
+    
+    try:
+        # Read JSON input from stdin
+        input_data = sys.stdin.read()
+        
+        if not input_data.strip():
+            print(json.dumps({
+                'success': False,
+                'error': 'No input data provided',
+                'method': 'doctr_cli_error'
+            }))
+            sys.exit(1)
+            
+        # Parse JSON input
+        try:
+            data = json.loads(input_data)
+        except json.JSONDecodeError as e:
+            print(json.dumps({
+                'success': False,
+                'error': f'Invalid JSON input: {str(e)}',
+                'method': 'doctr_cli_json_error'
+            }))
+            sys.exit(1)
+        
+        # Get base64 image data
+        if 'imageBase64' not in data:
+            print(json.dumps({
+                'success': False,
+                'error': 'Missing imageBase64 field',
+                'method': 'doctr_cli_input_error'
+            }))
+            sys.exit(1)
+            
+        # Decode base64 image
+        try:
+            image_data = base64.b64decode(data['imageBase64'])
+        except Exception as e:
+            print(json.dumps({
+                'success': False,
+                'error': f'Failed to decode base64 image: {str(e)}',
+                'method': 'doctr_cli_decode_error'
+            }))
+            sys.exit(1)
+        
+        # Process with DocTR
+        result = extract_betting_data(image_data)
+        
+        # Output JSON result
+        print(json.dumps(result))
+        
+    except Exception as e:
+        print(json.dumps({
+            'success': False,
+            'error': f'DocTR CLI processing failed: {str(e)}',
+            'method': 'doctr_cli_general_error'
+        }))
+        sys.exit(1)
