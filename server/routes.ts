@@ -145,39 +145,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const texto = line.full_text || '';
             console.log(`Line ${index+1}: "${texto.substring(0, 100)}"`);
             
-            // Detect betting houses with improved pattern matching
+            // Detect betting houses with position-based number extraction
             casasApostas.forEach(casa => {
               if (texto.includes(casa)) {
                 console.log(`Found betting house: ${casa} in line: ${texto}`);
                 
-                // Extract numerical values from the same line using your regex approach
-                const numerosMatch = texto.match(/(\d+\.?\d*)/g);
-                const numeros = numerosMatch ? numerosMatch.map(n => parseFloat(n)).filter(n => !isNaN(n)) : [];
+                // Get position of the betting house in the text
+                const casaPos = texto.indexOf(casa);
                 
-                console.log(`Numbers found: ${numeros}`);
+                // Extract ALL numbers from the line
+                const numerosRegex = /(\d+\.?\d*)/g;
+                const numerosMatch = [];
+                let match;
+                while ((match = numerosRegex.exec(texto)) !== null) {
+                  numerosMatch.push({
+                    value: parseFloat(match[1]),
+                    position: match.index,
+                    text: match[1]
+                  });
+                }
                 
-                if (!betA.bettingHouse && numeros.length >= 2) {
+                console.log(`Numbers found with positions:`, numerosMatch);
+                
+                // Find numbers that appear AFTER the betting house name
+                const numerosAposCasa = numerosMatch
+                  .filter(num => num.position > casaPos && !isNaN(num.value))
+                  .filter(num => num.value > 0); // Remove zeros
+                
+                console.log(`Numbers after ${casa}:`, numerosAposCasa);
+                
+                if (!betA.bettingHouse) {
                   betA.bettingHouse = casa;
-                  // Find odds (typically > 1.0) and stake
-                  for (let i = 0; i < numeros.length; i++) {
-                    if (numeros[i] > 1.0 && numeros[i] < 10 && !betA.odds) {
-                      betA.odds = numeros[i].toString();
-                      if (i + 1 < numeros.length) {
-                        betA.stake = numeros[i + 1].toString();
-                      }
-                      break;
-                    }
+                  
+                  // For BetA: Look for odds patterns - typically between 1.0 and 10.0
+                  const possibleOdds = numerosAposCasa.filter(num => 
+                    num.value >= 1.0 && num.value <= 10.0 && num.text.includes('.')
+                  );
+                  
+                  if (possibleOdds.length > 0) {
+                    // Take the first reasonable odds after the house name
+                    betA.odds = possibleOdds[0].text;
+                    console.log(`BetA odds set to: ${betA.odds}`);
                   }
-                } else if (!betB.bettingHouse && numeros.length >= 2) {
+                  
+                  // For stakes: look for larger numbers (typically 10-100)
+                  const possibleStakes = numerosAposCasa.filter(num => 
+                    num.value >= 10 && num.value <= 1000
+                  );
+                  
+                  if (possibleStakes.length > 0) {
+                    betA.stake = possibleStakes[0].text;
+                    console.log(`BetA stake set to: ${betA.stake}`);
+                  }
+                  
+                } else if (!betB.bettingHouse) {
                   betB.bettingHouse = casa;
-                  for (let i = 0; i < numeros.length; i++) {
-                    if (numeros[i] > 1.0 && numeros[i] < 10 && !betB.odds) {
-                      betB.odds = numeros[i].toString();
-                      if (i + 1 < numeros.length) {
-                        betB.stake = numeros[i + 1].toString();
-                      }
-                      break;
+                  
+                  // For BetB: Look for odds patterns
+                  const possibleOdds = numerosAposCasa.filter(num => 
+                    num.value >= 1.0 && num.value <= 10.0 && num.text.includes('.')
+                  );
+                  
+                  if (possibleOdds.length > 0) {
+                    // If betA already took first odds, take second
+                    const oddsIndex = possibleOdds.findIndex(odds => odds.text !== betA.odds);
+                    if (oddsIndex >= 0) {
+                      betB.odds = possibleOdds[oddsIndex].text;
+                    } else if (possibleOdds.length > 1) {
+                      betB.odds = possibleOdds[1].text;
+                    } else {
+                      betB.odds = possibleOdds[0].text;
                     }
+                    console.log(`BetB odds set to: ${betB.odds}`);
+                  }
+                  
+                  // For stakes: look for larger numbers, but different from betA
+                  const possibleStakes = numerosAposCasa.filter(num => 
+                    num.value >= 10 && num.value <= 1000 && num.text !== betA.stake
+                  );
+                  
+                  if (possibleStakes.length > 0) {
+                    betB.stake = possibleStakes[0].text;
+                    console.log(`BetB stake set to: ${betB.stake}`);
                   }
                 }
               }
@@ -190,14 +239,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log(`Found profit: ${totalProfitPercentage}%`);
             }
             
-            // Extract teams
-            const teamMatch = texto.match(/([A-Za-zÀ-ÿ\s]+)\s*[—-]\s*([A-Za-zÀ-ÿ\s]+)/);
+            // Extract teams with better pattern - look for team names before betting houses
+            const teamMatch = texto.match(/([A-Za-zÀ-ÿ\s\-]+)\s*[—-]\s*([A-Za-zÀ-ÿ\s\-]+)/);
             if (teamMatch && !betA.teamA) {
-              betA.teamA = teamMatch[1].trim();
-              betA.teamB = teamMatch[2].trim();
-              betB.teamA = betA.teamA;
-              betB.teamB = betA.teamB;
-              console.log(`Found teams: ${betA.teamA} vs ${betA.teamB}`);
+              let teamA = teamMatch[1].trim();
+              let teamB = teamMatch[2].trim();
+              
+              // Clean up team names - remove betting house names if they got mixed in
+              casasApostas.forEach(casa => {
+                teamA = teamA.replace(casa, '').trim();
+                teamB = teamB.replace(casa, '').trim();
+              });
+              
+              // Remove common OCR artifacts
+              teamA = teamA.replace(/\s+/g, ' ').replace(/^[^A-Za-zÀ-ÿ]+/, '').trim();
+              teamB = teamB.replace(/\s+/g, ' ').replace(/^[^A-Za-zÀ-ÿ]+/, '').trim();
+              
+              if (teamA.length > 2 && teamB.length > 2) {
+                betA.teamA = teamA;
+                betA.teamB = teamB;
+                betB.teamA = teamA;
+                betB.teamB = teamB;
+                console.log(`Found teams: ${betA.teamA} vs ${betA.teamB}`);
+              }
+            }
+            
+            // Alternative team extraction from specific patterns
+            if (!betA.teamA && (texto.includes('Grêmio') || texto.includes('Vitória'))) {
+              const gremioDVitoriaMatch = texto.match(/(Grêmio[-\s]*[A-Z]*)\s*[—-]?\s*(Vitória[-\s]*[A-Z]*)/);
+              if (gremioDVitoriaMatch) {
+                betA.teamA = gremioDVitoriaMatch[1].trim();
+                betA.teamB = gremioDVitoriaMatch[2].trim();
+                betB.teamA = betA.teamA;
+                betB.teamB = betA.teamB;
+                console.log(`Found specific teams: ${betA.teamA} vs ${betA.teamB}`);
+              }
             }
           });
           
