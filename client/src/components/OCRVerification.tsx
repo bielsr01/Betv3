@@ -33,12 +33,25 @@ export default function OCRVerification({
     // If we have a formatted DD-MM-YYYY date, ensure the gameDate is properly set
     if (data.gameDateFormatted && !data.gameDate) {
       try {
-        // Convert DD-MM-YYYY to proper Date object
+        // Convert DD-MM-YYYY to proper Date object (avoiding timezone issues)
         const [day, month, year] = data.gameDateFormatted.split('-');
-        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        // Use noon to avoid timezone conversion issues
+        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0);
         initialData.gameDate = dateObj;
       } catch (error) {
         console.error('Failed to parse formatted date:', data.gameDateFormatted, error);
+      }
+    }
+    
+    // If we have a gameDate string from backend (YYYY-MM-DD), convert properly
+    if (typeof data.gameDate === 'string' && data.gameDate.includes('-')) {
+      try {
+        // Convert YYYY-MM-DD to Date object (avoiding timezone issues)
+        const [year, month, day] = data.gameDate.split('-');
+        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0);
+        initialData.gameDate = dateObj;
+      } catch (error) {
+        console.error('Failed to parse gameDate string:', data.gameDate, error);
       }
     }
     
@@ -62,9 +75,6 @@ export default function OCRVerification({
     if (!formData.betA.stake || isNaN(Number(formData.betA.stake)) || Number(formData.betA.stake) <= 0) {
       newErrors['betA.stake'] = 'Valor da aposta deve ser um número válido maior que 0';
     }
-    if (!formData.betA.payout || isNaN(Number(formData.betA.payout)) || Number(formData.betA.payout) <= 0) {
-      newErrors['betA.payout'] = 'Retorno deve ser um número válido maior que 0';
-    }
     if (!formData.betA.profit || isNaN(Number(formData.betA.profit))) {
       newErrors['betA.profit'] = 'Lucro deve ser um número válido';
     }
@@ -79,9 +89,6 @@ export default function OCRVerification({
     }
     if (!formData.betB.stake || isNaN(Number(formData.betB.stake)) || Number(formData.betB.stake) <= 0) {
       newErrors['betB.stake'] = 'Valor da aposta deve ser um número válido maior que 0';
-    }
-    if (!formData.betB.payout || isNaN(Number(formData.betB.payout)) || Number(formData.betB.payout) <= 0) {
-      newErrors['betB.payout'] = 'Retorno deve ser um número válido maior que 0';
     }
     if (!formData.betB.profit || isNaN(Number(formData.betB.profit))) {
       newErrors['betB.profit'] = 'Lucro deve ser um número válido';
@@ -100,9 +107,6 @@ export default function OCRVerification({
     if (normalizeTeam(formData.betA.teamA) !== normalizeTeam(formData.betB.teamA) || 
         normalizeTeam(formData.betA.teamB) !== normalizeTeam(formData.betB.teamB)) {
       newErrors.teams = 'Os times devem ser iguais em ambas as apostas';
-    }
-    if (formData.betA.selectedSide === formData.betB.selectedSide) {
-      newErrors.sides = 'As apostas devem ser em lados opostos';
     }
 
     setErrors(newErrors);
@@ -160,19 +164,15 @@ export default function OCRVerification({
     }
   };
 
-  // Helper function to get display date - prioritizes formatted date when available
+  // Helper function to get display date - shows only DD-MM-YYYY (without time)
   const getDisplayDate = () => {
-    if (formData.gameDateTime) {
-      // If we have the combined DD-MM-YYYY HH:MM format, show it
-      return formData.gameDateTime;
-    }
     if (formData.gameDateFormatted) {
-      // If we have DD-MM-YYYY format, show it
-      return formData.gameDateFormatted + (formData.gameTime ? ` ${formData.gameTime}` : '');
+      // Show only DD-MM-YYYY format (no time)
+      return formData.gameDateFormatted;
     }
     if (formData.gameDate) {
-      // Fallback to standard date formatting
-      return format(new Date(formData.gameDate), 'dd-MM-yyyy', { locale: ptBR }) + (formData.gameTime ? ` ${formData.gameTime}` : '');
+      // Fallback to standard date formatting (no time)
+      return format(new Date(formData.gameDate), 'dd-MM-yyyy', { locale: ptBR });
     }
     return null;
   };
@@ -184,9 +184,10 @@ export default function OCRVerification({
       if (formData.gameDate instanceof Date) {
         return formData.gameDate;
       }
-      // If gameDate is a string, convert it
+      // If gameDate is a string (YYYY-MM-DD), convert it properly avoiding timezone issues
       if (typeof formData.gameDate === 'string') {
-        return new Date(formData.gameDate + 'T12:00:00');
+        const [year, month, day] = formData.gameDate.split('-');
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0);
       }
     }
     return undefined;
