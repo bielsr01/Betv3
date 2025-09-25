@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { spawn } from "child_process";
 import { storage } from "./storage";
 import { type InsertBet } from "@shared/schema";
 
@@ -100,7 +101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // DOCTR AI SYSTEM: Advanced AI-powered OCR with PyTorch backend
         console.log('Starting DocTR AI OCR system (PyTorch + AI models)...');
         const doctrResult = await new Promise((resolve, reject) => {
-          const child = spawn('python3', ['server/doctr_ai_ocr.py', imageBase64], {
+          const child = spawn('python3', ['server/doctr_ai_ocr.py'], {
             stdio: ['pipe', 'pipe', 'pipe']
           });
           
@@ -124,6 +125,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
           child.on('error', (err) => reject(err));
+          
+          // Send base64 data via stdin to avoid E2BIG error
+          child.stdin.write(imageBase64);
+          child.stdin.end();
         });
         
         const processingTime = Date.now() - startTime;
