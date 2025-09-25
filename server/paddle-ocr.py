@@ -298,7 +298,7 @@ class BettingSlipOCR:
         for i, line in enumerate(lines):
             line = line.strip()
             
-            # REGRA NOVA: Extrair data e hora do evento (formato: "Evento em X dias (YYYY-MM-DD HH:MM -03:00)")
+            # REGRA DATA 1: Extrair data e hora do evento (formato: "Evento em X dias (YYYY-MM-DD HH:MM -03:00)")
             event_date_match = re.search(r'Evento em.*?\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})', line)
             if event_date_match:
                 date_str = event_date_match.group(1)  # YYYY-MM-DD
@@ -318,13 +318,70 @@ class BettingSlipOCR:
                 except ValueError as e:
                     print(f"Date parsing failed: {e}", file=sys.stderr)
             
-            # REGRA 1: Extrair lucro real em porcentagem (formato: "Team A – Team B 1.59% Futebol")
+            # REGRA DATA 2: Detectar data de hoje baseada no contexto do jogo
+            # Se não encontrar data específica, usar data atual para jogos ao vivo
+            if 'ao vivo' in line.lower() or 'live' in line.lower():
+                from datetime import datetime
+                today = datetime.now()
+                formatted_date = today.strftime('%d-%m-%Y')
+                iso_date = today.strftime('%Y-%m-%d')
+                
+                result['gameDate'] = iso_date
+                result['gameTime'] = '00:00'  # Default para jogos ao vivo
+                result['gameDateFormatted'] = formatted_date
+                result['gameDateTime'] = f"{formatted_date} 00:00"
+                print(f"Live game detected - using today's date: {formatted_date}", file=sys.stderr)
+            
+            # REGRA DATA 3: Extrair data de qualquer formato DD-MM-YYYY ou DD/MM/YYYY
+            date_pattern_match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', line)
+            if date_pattern_match and result.get('gameDate') == '2025-01-01':
+                day, month, year = date_pattern_match.groups()
+                try:
+                    # Normalizar para DD-MM-YYYY
+                    formatted_date = f"{day.zfill(2)}-{month.zfill(2)}-{year}"
+                    iso_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                    
+                    result['gameDate'] = iso_date
+                    result['gameDateFormatted'] = formatted_date
+                    print(f"Date pattern found: {line.strip()} -> {formatted_date}", file=sys.stderr)
+                except ValueError:
+                    pass
+            
+            # REGRA 1A: Extrair lucro real em porcentagem (formato: "Team A – Team B 1.59% Futebol")
             # Ignorar ROI, pegar o percentual de lucro real da surebet
-            profit_percentage_match = re.search(r'[–-]\s*[\w\s&]+\s+(\d+[,\.]\d+)%\s+Futebol', line)
+            profit_percentage_match = re.search(r'[–-]\s*[\w\s&]+\s+(\d+[,\.]\d+)%\s+(Futebol|Basquete)', line)
             if profit_percentage_match:
                 percentage = profit_percentage_match.group(1).replace(',', '.')
                 result['totalProfitPercentage'] = f"{percentage}%"
                 print(f"Real profit percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
+            
+            # REGRA 1B: Extrair lucro total da surebet (buscar padrões como "1.71%" isolados)
+            isolated_percentage_match = re.search(r'(\d+[,\.]\d+)%', line)
+            if isolated_percentage_match and 'ROI' not in line and 'comissões' not in line.lower():
+                percentage = isolated_percentage_match.group(1).replace(',', '.')
+                # Verificar se é um valor razoável para lucro de surebet (0.1% - 10%)
+                try:
+                    perc_value = float(percentage)
+                    if 0.1 <= perc_value <= 10.0 and result.get('totalProfitPercentage', '0%') == '0%':
+                        result['totalProfitPercentage'] = f"{percentage}%"
+                        print(f"Isolated profit percentage found: {result['totalProfitPercentage']} from line: {line.strip()}", file=sys.stderr)
+                except ValueError:
+                    pass
+            
+            # REGRA 1C: Buscar percentual em qualquer contexto (último recurso)
+            if result.get('totalProfitPercentage', '0%') == '0%':
+                all_percentages = re.findall(r'(\d+[,\.]\d+)%', line)
+                for perc in all_percentages:
+                    if 'ROI' not in line and 'comissão' not in line.lower():
+                        try:
+                            perc_clean = perc.replace(',', '.')
+                            perc_value = float(perc_clean)
+                            if 0.1 <= perc_value <= 10.0:
+                                result['totalProfitPercentage'] = f"{perc_clean}%"
+                                print(f"Generic profit percentage found: {result['totalProfitPercentage']} from: {line.strip()}", file=sys.stderr)
+                                break
+                        except ValueError:
+                            continue
             
             # REGRA 2A: Extrair times em formato markdown header (# Team A - Team B)
             if line.startswith('#') and ' - ' in line:
@@ -437,18 +494,24 @@ class BettingSlipOCR:
                     bet_type_cleaned = self._clean_mathematical_symbols(row[1])
                     result[bet_key]['betType'] = bet_type_cleaned
                     
-                    # Procurar odds primeiro (valor numérico válido que não seja moeda)
+                    # Procurar odds: buscar valor numérico nas colunas 3-5 (típicas para odds)
                     odds_found = False
-                    for col_idx in range(2, min(len(row), 6)):  # Buscar nas primeiras colunas
+                    for col_idx in range(2, min(len(row), 7)):  # Expandir busca
                         cell_value = row[col_idx].strip()
-                        # Deve ser um número válido (não moeda) e maior que 1 (típico de odds)
-                        if (self._is_valid_odds(cell_value) and 
-                            not self._normalize_monetary_value(cell_value) and  # Não é moeda
-                            float(self._normalize_number(cell_value)) >= 1.0):  # Odds típicos >= 1.0
-                            result[bet_key]['odds'] = self._normalize_number(cell_value)
-                            odds_found = True
-                            print(f"Odds found for {bet_key}: {cell_value} -> {result[bet_key]['odds']}", file=sys.stderr)
-                            break
+                        
+                        # Remover caracteres especiais e verificar se é número válido para odds
+                        cleaned_value = self._normalize_number(cell_value)
+                        if cleaned_value and cleaned_value != '0':
+                            try:
+                                num_value = float(cleaned_value)
+                                # Odds típicos: entre 1.01 e 20.0, e NÃO são valores muito altos (stakes)
+                                if 1.01 <= num_value <= 20.0 and num_value != float(result[bet_key].get('stake', '0')):
+                                    result[bet_key]['odds'] = cleaned_value
+                                    odds_found = True
+                                    print(f"Odds found for {bet_key}: {cell_value} -> {cleaned_value}", file=sys.stderr)
+                                    break
+                            except ValueError:
+                                continue
                     
                     if not odds_found:
                         result[bet_key]['odds'] = '1.0'  # Default
@@ -483,6 +546,20 @@ class BettingSlipOCR:
                 
                 print(f"{bet_key}: Casa={result[bet_key]['bettingHouse']}, Tipo={result[bet_key]['betType']}, Odds={result[bet_key]['odds']}, Stake={result[bet_key]['stake']}, Lucro={result[bet_key]['profit']}", file=sys.stderr)
         
+        # FALLBACK: Se não encontrou data específica, usar data atual (comum em surebets ao vivo)
+        if result.get('gameDate') == '2025-01-01':
+            from datetime import datetime
+            today = datetime.now()
+            formatted_date = today.strftime('%d-%m-%Y')
+            iso_date = today.strftime('%Y-%m-%d')
+            current_time = today.strftime('%H:%M')
+            
+            result['gameDate'] = iso_date
+            result['gameTime'] = current_time
+            result['gameDateFormatted'] = formatted_date
+            result['gameDateTime'] = f"{formatted_date} {current_time}"
+            print(f"No specific date found - using current date/time: {formatted_date} {current_time}", file=sys.stderr)
+
         print("Intelligent markdown parsing with specific rules completed", file=sys.stderr)
         return result
 
