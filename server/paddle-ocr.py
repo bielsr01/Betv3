@@ -157,8 +157,16 @@ class BettingSlipOCR:
         
         print(f"Using coordinate-based extraction...", file=sys.stderr)
         
-        # Use coordinate-based extraction (user's solution)
+        # Get parsed text for fallback
+        parsed_text = main_result.get('ParsedText', '')
+        
+        # Use coordinate-based extraction (user's solution) with fallback
         result = self._extract_betting_data_coordinate_based(ocr_result)
+        
+        # If coordinate method fails, fallback to old method
+        if (not result['betA']['bettingHouse'] and not result['betB']['bettingHouse']):
+            print("Coordinate method failed, falling back to regex method", file=sys.stderr)
+            result = self._extract_betting_data_from_ocr_text(parsed_text, text_overlay)
         
         return result
 
