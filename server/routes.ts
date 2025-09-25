@@ -97,30 +97,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // PURE EXTRACTION: Use working OCR blocks for simple text reading  
-        console.log('Starting pure text extraction...');
+        // HYBRID SYSTEM: Combine working OCR blocks with improved processing
+        console.log('Starting hybrid OCR system (blocks + improved processing)...');
         const { analyzeImageBlocks } = await import('./local-ocr');
         const blocksResult = await analyzeImageBlocks(imageBase64);
         
         const processingTime = Date.now() - startTime;
-        console.log(`Pure text extraction completed in ${processingTime}ms`);
+        console.log(`Hybrid OCR completed in ${processingTime}ms`);
         
-        // Extract all text from lines (correct structure)
+        // Extract all text from lines (structure that worked before)
         const allText = blocksResult.lines ? 
           blocksResult.lines.map(line => line.full_text || '').filter(text => text.trim()).join(' ') : '';
         
-        // Extract betting data automatically from text
-        const betData = extractBettingData(allText, blocksResult.lines || []);
+        // Apply improved regex-based extraction from your research
+        const betData = extractBettingDataImproved(allText, blocksResult.lines || []);
         
-        // Create result with automatically filled fields
+        // Create result with hybrid extraction
         const simpleResult = {
           success: true,
-          method: 'automatic_extraction',
+          method: 'hybrid_improved_extraction',
           raw_text: allText,
           text_blocks: blocksResult.lines || [],
           total_blocks: blocksResult.total_blocks || 0,
           
-          // Automatically filled fields from extracted data
+          // Automatically filled fields using improved logic
           betA: betData.betA,
           betB: betData.betB,
           gameDate: betData.gameDate,
@@ -130,98 +130,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalProfitPercentage: betData.totalProfitPercentage
         };
         
-        // Add automatic extraction function before the route handler
-        function extractBettingData(fullText: string, lines: any[]) {
+        // Improved extraction function based on your research
+        function extractBettingDataImproved(fullText: string, lines: any[]) {
           let betA = { bettingHouse: '', teamA: '', teamB: '', betType: '', odds: '', stake: '', payout: '', selectedSide: 'A' };
           let betB = { bettingHouse: '', teamA: '', teamB: '', betType: '', odds: '', stake: '', payout: '', selectedSide: 'B' };
           let gameDate = '', gameTime = '', sport = 'Futebol', league = '', totalProfitPercentage = '';
           
-          // Look for betting houses and data in lines
-          lines.forEach(line => {
-            const text = line.full_text || '';
+          console.log(`Processing ${lines.length} lines with improved regex...`);
+          
+          // Enhanced casa detection using your approach
+          const casasApostas = ['KTO', 'Pinnacle', 'Bet365', 'Betfair', 'Sportsbet', 'Betano', 'Rivalo', 'Betway', 'BravoBet', 'Blaze'];
+          
+          lines.forEach((line, index) => {
+            const texto = line.full_text || '';
+            console.log(`Line ${index+1}: "${texto.substring(0, 100)}"`);
             
-            // Extract Pinnacle data
-            if (text.includes('Pinnacle')) {
-              const pinnacleMatch = text.match(/Pinnacle.*?([\d.]+).*?([\d.]+)/);
-              if (pinnacleMatch) {
-                betB.bettingHouse = 'Pinnacle';
-                betB.odds = pinnacleMatch[1];
-                betB.stake = pinnacleMatch[2];
+            // Detect betting houses with improved pattern matching
+            casasApostas.forEach(casa => {
+              if (texto.includes(casa)) {
+                console.log(`Found betting house: ${casa} in line: ${texto}`);
                 
-                // Extract bet type
-                if (text.includes('H2(0)')) betB.betType = 'H2(0) 1º período';
-                else if (text.includes('H1')) betB.betType = 'H1';
-                else if (text.includes('DNB')) betB.betType = 'DNB';
+                // Extract numerical values from the same line using your regex approach
+                const numerosMatch = texto.match(/(\d+\.?\d*)/g);
+                const numeros = numerosMatch ? numerosMatch.map(n => parseFloat(n)).filter(n => !isNaN(n)) : [];
+                
+                console.log(`Numbers found: ${numeros}`);
+                
+                if (!betA.bettingHouse && numeros.length >= 2) {
+                  betA.bettingHouse = casa;
+                  // Find odds (typically > 1.0) and stake
+                  for (let i = 0; i < numeros.length; i++) {
+                    if (numeros[i] > 1.0 && numeros[i] < 10 && !betA.odds) {
+                      betA.odds = numeros[i].toString();
+                      if (i + 1 < numeros.length) {
+                        betA.stake = numeros[i + 1].toString();
+                      }
+                      break;
+                    }
+                  }
+                } else if (!betB.bettingHouse && numeros.length >= 2) {
+                  betB.bettingHouse = casa;
+                  for (let i = 0; i < numeros.length; i++) {
+                    if (numeros[i] > 1.0 && numeros[i] < 10 && !betB.odds) {
+                      betB.odds = numeros[i].toString();
+                      if (i + 1 < numeros.length) {
+                        betB.stake = numeros[i + 1].toString();
+                      }
+                      break;
+                    }
+                  }
+                }
               }
-            }
+            });
             
-            // Extract KTO data
-            if (text.includes('KTO') || text.includes('kto')) {
-              const ktoMatch = text.match(/([\d.]+).*?([\d.]+)/);
-              if (ktoMatch) {
-                betA.bettingHouse = 'KTO';
-                betA.odds = ktoMatch[1];
-                betA.stake = ktoMatch[2];
-                
-                // Extract bet type
-                if (text.includes('1/')) betA.betType = '1/ DNB 1º período';
-                else if (text.includes('DNB')) betA.betType = 'DNB';
-              }
+            // Extract profit percentage using your approach
+            const profitMatch = texto.match(/(\d+\.?\d*)%/);
+            if (profitMatch && !totalProfitPercentage) {
+              totalProfitPercentage = profitMatch[1];
+              console.log(`Found profit: ${totalProfitPercentage}%`);
             }
             
             // Extract teams
-            if (text.includes('—') || text.includes('-')) {
-              const teamMatch = text.match(/([\w\s-]+)\s*[—-]\s*([\w\s-]+)/);
-              if (teamMatch) {
-                betA.teamA = teamMatch[1].trim();
-                betA.teamB = teamMatch[2].trim();
-                betB.teamA = teamMatch[1].trim();
-                betB.teamB = teamMatch[2].trim();
-              }
-            }
-            
-            // Extract total profit
-            if (text.includes('%') || text.includes('total')) {
-              const profitMatch = text.match(/([\d.]+)%/);
-              if (profitMatch) {
-                totalProfitPercentage = profitMatch[1];
-              }
-            }
-            
-            // Extract date
-            if (text.match(/\d{4}-\d{2}-\d{2}/) || text.match(/\d{2}\/\d{2}/)) {
-              const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})|(\d{2}\/\d{2}\/\d{4})/);
-              if (dateMatch) {
-                gameDate = dateMatch[0];
-              }
+            const teamMatch = texto.match(/([A-Za-zÀ-ÿ\s]+)\s*[—-]\s*([A-Za-zÀ-ÿ\s]+)/);
+            if (teamMatch && !betA.teamA) {
+              betA.teamA = teamMatch[1].trim();
+              betA.teamB = teamMatch[2].trim();
+              betB.teamA = betA.teamA;
+              betB.teamB = betA.teamB;
+              console.log(`Found teams: ${betA.teamA} vs ${betA.teamB}`);
             }
           });
           
-          // Calculate payouts if missing
-          if (betA.odds && betA.stake && !betA.payout) {
+          // Calculate payouts
+          if (betA.odds && betA.stake) {
             betA.payout = (parseFloat(betA.odds) * parseFloat(betA.stake)).toFixed(2);
           }
-          if (betB.odds && betB.stake && !betB.payout) {
+          if (betB.odds && betB.stake) {
             betB.payout = (parseFloat(betB.odds) * parseFloat(betB.stake)).toFixed(2);
           }
           
-          // Set default date if none found
+          // Set default date
           if (!gameDate) {
             const today = new Date();
             gameDate = today.toISOString().split('T')[0];
           }
           
+          console.log(`Extraction complete - BetA: ${betA.bettingHouse}, BetB: ${betB.bettingHouse}`);
+          
           return { betA, betB, gameDate, gameTime, sport, league, totalProfitPercentage };
         }
         
-        console.log('DEBUG: AUTOMATIC_EXTRACTION_SUCCESS', JSON.stringify({
-          method: 'automatic_extraction',
+        console.log('DEBUG: HYBRID_OCR_SUCCESS', JSON.stringify({
+          method: 'hybrid_improved_extraction',
           total_blocks: simpleResult.total_blocks,
-          text_preview: allText.substring(0, 150),
+          text_preview: simpleResult.raw_text.substring(0, 150),
           betA_house: simpleResult.betA.bettingHouse,
           betB_house: simpleResult.betB.bettingHouse,
           betA_odds: simpleResult.betA.odds,
           betB_odds: simpleResult.betB.odds,
+          betA_stake: simpleResult.betA.stake,
+          betB_stake: simpleResult.betB.stake,
+          total_profit: simpleResult.totalProfitPercentage,
           processing_time_ms: processingTime,
           timestamp: new Date().toISOString()
         }));
@@ -232,16 +241,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         
       } catch (extractionError: any) {
-        console.error('ERROR: Pure text extraction failed');
+        console.error('ERROR: Improved OCR extraction failed');
         
-        console.log('DEBUG: EXTRACTION_FAILED', JSON.stringify({
-          method: 'pure_text_extraction',
+        console.log('DEBUG: IMPROVED_OCR_FAILED', JSON.stringify({
+          method: 'improved_ocr_extraction',
           error_message: extractionError?.message || 'Unknown error',
           processing_time_ms: Date.now() - startTime,
           timestamp: new Date().toISOString()
         }));
         
-        throw new Error(`Pure text extraction failed: ${extractionError?.message || 'Unknown error'}`);
+        throw new Error(`Improved OCR extraction failed: ${extractionError?.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('OCR analysis error:', error);
