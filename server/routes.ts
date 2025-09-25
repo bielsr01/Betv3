@@ -99,7 +99,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const { spawn } = await import('child_process');
         const doctrResult = await new Promise((resolve, reject) => {
-          const child = spawn('python3', ['server/real_ocr_engine.py'], {
+          const child = spawn('python3', ['server/ocr_space_engine.py'], {
             stdio: ['pipe', 'pipe', 'pipe']
           });
           
@@ -142,7 +142,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
           // Send JSON data to Python script
-          child.stdin.write(JSON.stringify({ imageBase64 }));
+          child.stdin.write(JSON.stringify({ 
+            imageBase64,
+            apiKey: process.env.OCRSPACE_API_KEY
+          }));
           child.stdin.end();
         });
 
