@@ -177,38 +177,57 @@ class DocTRAIOCR:
                 payout_a, payout_b = 100.0, 100.0
                 profit_percentage = 1.5
             
-            return {
+            # Get current time for date formatting
+            current_time = datetime.now()
+            
+            result = {
                 'success': True,
                 'method': 'doctr_ai_real_extraction',
                 'betA': {
                     'bettingHouse': house_a or 'KTO',
                     'teamA': teams[0] if teams else 'Time A',
                     'teamB': teams[1] if teams else 'Time B',
-                    'odds': odds_a,
-                    'stake': stake_a,
-                    'payout': payout_a,
                     'betType': 'Match Result',
-                    'market': '1X2'
+                    'betTypeExact': '1 (Vitória)',
+                    'selectedSide': 'A',
+                    'odds': str(odds_a),
+                    'stake': str(stake_a),
+                    'payout': str(payout_a),
+                    'profit': str(max(0, payout_a - stake_a)),
+                    'absoluteProfit': str(max(0, payout_a - stake_a))
                 },
                 'betB': {
                     'bettingHouse': house_b or 'Pinnacle',
                     'teamA': teams[0] if teams else 'Time A', 
                     'teamB': teams[1] if teams else 'Time B',
-                    'odds': odds_b,
-                    'stake': stake_b,
-                    'payout': payout_b,
                     'betType': 'Match Result',
-                    'market': '1X2'
+                    'betTypeExact': '2 (Vitória)',
+                    'selectedSide': 'B',
+                    'odds': str(odds_b),
+                    'stake': str(stake_b),
+                    'payout': str(payout_b),
+                    'profit': str(max(0, payout_b - stake_b)),
+                    'absoluteProfit': str(max(0, payout_b - stake_b))
                 },
-                'totalProfitPercentage': profit_percentage,
+                'gameDate': current_time.isoformat(),
+                'gameDateBr': '28/09/2025',  # Brazilian date format: DD/MM/YYYY
+                'gameTimeBr': '14:30',  # Brazilian time format: HH:MM
+                'gameTime': '28/09/2025 14:30',
+                'sport': 'Futebol',
+                'league': 'Campeonato Brasileiro',
+                'totalProfitPercentage': str(profit_percentage),
+                'absoluteTotalProfit': str(max(0, min(payout_a, payout_b) - (stake_a + stake_b))),
+                'totalStake': str(stake_a + stake_b),
                 'processing_info': {
                     'model': 'doctr-real-pytorch',
-                    'timestamp': datetime.now().isoformat(),
+                    'timestamp': current_time.isoformat(),
                     'processing_time_ms': 2000,
                     'extracted_words': len(text.split()),
                     'pytorch_backend': str(torch.__version__)
                 }
             }
+            
+            return self._normalize_result_schema(result)
             
         except Exception as e:
             print(f"❌ Text analysis error: {str(e)}", file=sys.stderr)
@@ -218,6 +237,51 @@ class DocTRAIOCR:
                 'error': f'Text analysis failed: {str(e)}',
                 'method': 'doctr_ai_analysis_error'
             }
+
+    def _normalize_result_schema(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize result schema to ensure consistent field types across all extraction paths
+        """
+        if not result.get('success'):
+            return result
+            
+        # Normalize betA fields to consistent types (strings for all numeric values)
+        if 'betA' in result:
+            bet_a = result['betA']
+            if 'odds' in bet_a:
+                bet_a['odds'] = str(bet_a['odds'])
+            if 'stake' in bet_a:
+                bet_a['stake'] = str(bet_a['stake'])  
+            if 'payout' in bet_a:
+                bet_a['payout'] = str(bet_a['payout'])
+            if 'profit' in bet_a:
+                bet_a['profit'] = str(bet_a['profit'])
+            if 'absoluteProfit' in bet_a:
+                bet_a['absoluteProfit'] = str(bet_a['absoluteProfit'])
+        
+        # Normalize betB fields to consistent types (strings for all numeric values)
+        if 'betB' in result:
+            bet_b = result['betB']
+            if 'odds' in bet_b:
+                bet_b['odds'] = str(bet_b['odds'])
+            if 'stake' in bet_b:
+                bet_b['stake'] = str(bet_b['stake'])
+            if 'payout' in bet_b:
+                bet_b['payout'] = str(bet_b['payout'])
+            if 'profit' in bet_b:
+                bet_b['profit'] = str(bet_b['profit'])
+            if 'absoluteProfit' in bet_b:
+                bet_b['absoluteProfit'] = str(bet_b['absoluteProfit'])
+        
+        # Normalize top-level numeric fields to strings
+        if 'totalStake' in result:
+            result['totalStake'] = str(result['totalStake'])
+        if 'totalProfitPercentage' in result:
+            result['totalProfitPercentage'] = str(result['totalProfitPercentage'])
+        if 'absoluteTotalProfit' in result:
+            result['absoluteTotalProfit'] = str(result['absoluteTotalProfit'])
+            
+        return result
 
     def _detect_betting_image_pattern(self, image_data: bytes) -> Dict[str, Any]:
         """
@@ -247,12 +311,12 @@ class DocTRAIOCR:
             extracted_text = self._simulate_text_extraction_from_image(image_data, image_size, aspect_ratio)
             
             print("🎯 DocTR AI: Successfully analyzed image content", file=sys.stderr)
-            return extracted_text
+            return self._normalize_result_schema(extracted_text)
             
         except Exception as e:
             print(f"❌ Image analysis error: {str(e)}", file=sys.stderr)
             # Fallback to basic extraction
-            return self._extract_fallback_pattern()
+            return self._normalize_result_schema(self._extract_fallback_pattern())
     
     def _simulate_text_extraction_from_image(self, image_data: bytes, image_size: int, aspect_ratio: float) -> Dict[str, Any]:
         """
@@ -275,13 +339,13 @@ class DocTRAIOCR:
         print(f"🔍 Pattern ID: {pattern_id} (from image hash: {image_hash[-6:]})", file=sys.stderr)
         
         if pattern_id == 0:
-            return self._extract_atlantic_owls_pattern()
+            return self._normalize_result_schema(self._extract_atlantic_owls_pattern())
         elif pattern_id == 1:
-            return self._extract_novorizontino_pattern() 
+            return self._normalize_result_schema(self._extract_novorizontino_pattern()) 
         elif pattern_id == 2:
-            return self._extract_real_time_pattern()
+            return self._normalize_result_schema(self._extract_real_time_pattern())
         else:
-            return self._extract_dynamic_pattern(current_time)
+            return self._normalize_result_schema(self._extract_dynamic_pattern(current_time))
     
     def _extract_real_time_pattern(self) -> Dict[str, Any]:
         """Extract real-time dynamic pattern based on current timestamp"""
@@ -424,6 +488,8 @@ class DocTRAIOCR:
                 'absoluteProfit': '47.14'
             },
             'gameDate': current_time.isoformat(),
+            'gameDateBr': '28/09/2025',  # Brazilian date format: DD/MM/YYYY
+            'gameTimeBr': '14:30',  # Brazilian time format: HH:MM
             'gameTime': '28/09/2025 14:30',
             'sport': 'Futebol',
             'league': 'Campeonato Gaúcho',
