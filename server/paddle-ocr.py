@@ -24,9 +24,9 @@ class BettingSlipOCR:
         print("Initializing Azure Computer Vision API...", file=sys.stderr)
         
         try:
-            # Get credentials from environment variables (temporarily swapped due to user config error)
-            subscription_key = os.environ.get('AZURE_COMPUTER_VISION_ENDPOINT')  # Actually contains the key
-            endpoint = os.environ.get('AZURE_COMPUTER_VISION_KEY')  # Actually contains the endpoint
+            # Get credentials from environment variables
+            subscription_key = os.environ.get('AZURE_COMPUTER_VISION_KEY')
+            endpoint = os.environ.get('AZURE_COMPUTER_VISION_ENDPOINT')
             
             if subscription_key and endpoint:
                 # Initialize Azure Computer Vision client
@@ -82,7 +82,7 @@ class BettingSlipOCR:
             # Wait for the operation to complete
             while True:
                 read_result = self.client.get_read_result(operation_id)
-                if read_result.status not in [OperationStatusCodes.running]:
+                if read_result.status not in [OperationStatusCodes.not_started, OperationStatusCodes.running]:
                     break
                 time.sleep(0.1)
             
