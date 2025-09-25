@@ -298,13 +298,33 @@ class BettingSlipOCR:
         for i, line in enumerate(lines):
             line = line.strip()
             
-            # REGRA 1: Extrair ROI percentage (múltiplos formatos: "X.XX% ROI" ou "ROI: X.XX%")
-            roi_match = re.search(r'(?:(\d+[,\.]\d+)%\s+ROI|ROI:\s*(\d+[,\.]\d+)%)', line)
-            if roi_match:
-                # Capturar o grupo que não é None
-                percentage = (roi_match.group(1) or roi_match.group(2)).replace(',', '.')
+            # REGRA NOVA: Extrair data e hora do evento (formato: "Evento em X dias (YYYY-MM-DD HH:MM -03:00)")
+            event_date_match = re.search(r'Evento em.*?\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})', line)
+            if event_date_match:
+                date_str = event_date_match.group(1)  # YYYY-MM-DD
+                time_str = event_date_match.group(2)  # HH:MM
+                
+                try:
+                    # Converter YYYY-MM-DD para DD-MM-YYYY
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    formatted_date = date_obj.strftime('%d-%m-%Y')
+                    
+                    result['gameDate'] = date_str  # ISO for calendar
+                    result['gameTime'] = time_str
+                    result['gameDateFormatted'] = formatted_date  # DD-MM-YYYY for display
+                    result['gameDateTime'] = f"{formatted_date} {time_str}"  # Combined
+                    
+                    print(f"Event date/time found: {date_str} {time_str} -> {formatted_date} {time_str}", file=sys.stderr)
+                except ValueError as e:
+                    print(f"Date parsing failed: {e}", file=sys.stderr)
+            
+            # REGRA 1: Extrair lucro real em porcentagem (formato: "Team A – Team B 1.59% Futebol")
+            # Ignorar ROI, pegar o percentual de lucro real da surebet
+            profit_percentage_match = re.search(r'[–-]\s*[\w\s&]+\s+(\d+[,\.]\d+)%\s+Futebol', line)
+            if profit_percentage_match:
+                percentage = profit_percentage_match.group(1).replace(',', '.')
                 result['totalProfitPercentage'] = f"{percentage}%"
-                print(f"ROI percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
+                print(f"Real profit percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
             
             # REGRA 2: Extrair times com Unicode (acentos) e hífens
             # Capturar times antes de percentuais ou "Futebol" (formato: "Team A – Team B 1.59% Futebol")
@@ -420,12 +440,13 @@ class BettingSlipOCR:
         return result
 
     def _normalize_number(self, value: str) -> str:
-        """Normalize Brazilian number format (replace comma with dot)"""
+        """Normalize Brazilian number format and clean odds symbols"""
         if not value:
             return '0'
         
-        # Remove spaces and normalize decimal separator
+        # Remove spaces, symbols (•, *, etc.) and normalize decimal separator
         normalized = value.strip().replace(',', '.')
+        normalized = re.sub(r'[^\d\.]', '', normalized)  # Remove non-numeric characters
         
         # Check if it's a valid number
         try:
