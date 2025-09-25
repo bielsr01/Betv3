@@ -99,7 +99,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const { spawn } = await import('child_process');
         const doctrResult = await new Promise((resolve, reject) => {
-          const child = spawn('python3', ['server/image_analyzer_real.py'], {
+          const child = spawn('python3', ['server/real_ocr_engine.py'], {
             stdio: ['pipe', 'pipe', 'pipe']
           });
           
