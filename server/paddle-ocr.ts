@@ -39,14 +39,18 @@ export async function analyzeSureBetImagePaddle(imageBase64: string): Promise<Pa
       // Path to Python script
       const pythonScript = path.join(__dirname, 'paddle-ocr.py');
       
-      // Spawn Python process
-      const pythonProcess = spawn('python3', [pythonScript, imageBase64], {
+      // Spawn Python process (pass image through stdin instead of args)
+      const pythonProcess = spawn('python3', [pythonScript], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env },
       });
 
       let stdout = '';
       let stderr = '';
+
+      // Send base64 image through stdin
+      pythonProcess.stdin.write(imageBase64);
+      pythonProcess.stdin.end();
 
       pythonProcess.stdout.on('data', (data) => {
         stdout += data.toString();
