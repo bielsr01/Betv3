@@ -1,8 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { spawn } from "child_process";
 import { storage } from "./storage";
 import { type InsertBet } from "@shared/schema";
+import { GeminiAIOCR } from "./gemini_ai_ocr";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Bet routes
@@ -98,86 +98,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
       
       try {
-        // DOCTR AI SYSTEM: Advanced AI-powered OCR with PyTorch backend
-        console.log('Starting DocTR AI OCR system (PyTorch + AI models)...');
-        const doctrResult = await new Promise((resolve, reject) => {
-          const child = spawn('python3', ['server/doctr_ai_ocr.py'], {
-            stdio: ['pipe', 'pipe', 'pipe']
-          });
-          
-          let stdout = '';
-          let stderr = '';
-          
-          child.stdout.on('data', (data) => stdout += data);
-          child.stderr.on('data', (data) => stderr += data);
-          
-          child.on('close', (code) => {
-            if (code === 0) {
-              try {
-                const result = JSON.parse(stdout);
-                resolve(result);
-              } catch (e) {
-                reject(new Error(`Failed to parse DocTR AI output: ${e.message}`));
-              }
-            } else {
-              reject(new Error(`DocTR AI failed: ${stderr}`));
-            }
-          });
-          
-          child.on('error', (err) => reject(err));
-          
-          // Send base64 data via stdin to avoid E2BIG error
-          child.stdin.write(imageBase64);
-          child.stdin.end();
-        });
+        // GEMINI AI SYSTEM: Advanced multimodal AI-powered OCR 
+        // Superior to DocTR/Tesseract with Google's state-of-the-art AI
+        console.log('🤖 Starting Gemini AI OCR system (Google multimodal AI)...');
+        
+        const geminiOCR = new GeminiAIOCR();
+        const geminiResult = await geminiOCR.extractBettingData(imageBase64);
         
         const processingTime = Date.now() - startTime;
-        console.log(`DocTR AI OCR completed in ${processingTime}ms`);
+        console.log(`✅ Gemini AI OCR completed in ${processingTime}ms`);
         
-        if (!doctrResult.success) {
-          return res.status(500).json({
-            success: false,
-            error: doctrResult.error || 'DocTR AI OCR processing failed',
-            method: 'doctr_ai_ocr'
-          });
-        }
-        
-        // Create result using DocTR AI OCR (already has betting data extracted)
-        const simpleResult = {
-          success: true,
-          method: 'doctr_ai_pytorch',
-          raw_text: doctrResult.raw_text,
-          text_blocks: doctrResult.text_blocks,
-          total_blocks: doctrResult.text_blocks?.length || 0,
+        if (geminiResult.success) {
+          console.log('🎉 SUCCESS: Gemini AI extraction succeeded');
+          console.log('DEBUG: GEMINI_AI_SUCCESS', JSON.stringify({
+            method: geminiResult.method,
+            betA_house: geminiResult.betA?.bettingHouse,
+            betB_house: geminiResult.betB?.bettingHouse,
+            profit: geminiResult.totalProfitPercentage,
+            processing_time_ms: processingTime,
+            timestamp: new Date().toISOString()
+          }));
           
-          // Already extracted fields from DocTR AI OCR
-          betA: doctrResult.betA || {
-            bettingHouse: '',
-            teamA: '',
-            teamB: '',
-            betType: '',
-            odds: '',
-            stake: '',
-            payout: '',
-            selectedSide: 'A'
-          },
-          betB: doctrResult.betB || {
-            bettingHouse: '',
-            teamA: '',
-            teamB: '',
-            betType: '',
-            odds: '',
-            stake: '',
-            payout: '',
-            selectedSide: 'B'
-          },
-          gameDate: '',
-          gameTime: '',
-          sport: 'Futebol',
-          league: '',
-          totalProfitPercentage: doctrResult.totalProfitPercentage || '',
-          processing_info: doctrResult.processing_info
-        };
+          res.json(geminiResult);
+          return;
+        } else {
+          console.log('❌ ERROR: Gemini AI extraction failed');
+          console.log('DEBUG: GEMINI_AI_FAILED', JSON.stringify({
+            method: geminiResult.method,
+            error_message: geminiResult.error,
+            processing_time_ms: processingTime,
+            timestamp: new Date().toISOString()
+          }));
+          
+          throw new Error(`Gemini AI extraction failed: ${geminiResult.error}`);
+        }
         
         // Improved extraction function based on your research
         function extractBettingDataImproved(fullText: string, lines: any[]) {
