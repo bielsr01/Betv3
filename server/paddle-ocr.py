@@ -47,60 +47,20 @@ class BettingSlipOCR:
             raise
 
     def extract_text_with_mistral_ocr(self, base64_image: str) -> Dict[str, Any]:
-        """Extract betting data using Mistral.ai OCR with structured table extraction"""
+        """Extract betting data using Mistral.ai OCR with pure AI extraction"""
         try:
             if not self.mistral_api_key:
                 return self._fallback_ocr_response()
             
-            print("Using Mistral.ai OCR API for structured table extraction...", file=sys.stderr)
+            print("Using Mistral.ai OCR API for pure AI extraction...", file=sys.stderr)
             
-            # JSON Schema for structured betting data extraction
-            betting_schema = {
-                "type": "json_schema",
-                "json_schema": {
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "event_info": {
-                                "type": "object",
-                                "properties": {
-                                    "teams": {"type": "string", "description": "Team names in format 'Team A - Team B'"},
-                                    "sport": {"type": "string", "description": "Sport type (e.g., Futebol)"},
-                                    "league": {"type": "string", "description": "League or competition name"},
-                                    "date": {"type": "string", "description": "Game date in YYYY-MM-DD format"},
-                                    "time": {"type": "string", "description": "Game time in HH:MM format"},
-                                    "profit_percentage": {"type": "string", "description": "Total profit percentage (e.g., 3.45%)"}
-                                },
-                                "required": ["teams", "sport", "league", "date", "time"]
-                            },
-                            "betting_table": {
-                                "type": "array",
-                                "description": "Table of betting data with columns: Casa de Aposta, Chance, Aposta, Lucro",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "casa_aposta": {"type": "string", "description": "Betting house name"},
-                                        "chance": {"type": "string", "description": "Bet type or market"},
-                                        "aposta": {"type": "string", "description": "Odds value"},
-                                        "lucro": {"type": "string", "description": "Profit value"}
-                                    },
-                                    "required": ["casa_aposta", "chance", "aposta", "lucro"]
-                                }
-                            }
-                        },
-                        "required": ["event_info", "betting_table"]
-                    }
-                }
-            }
-            
-            # Prepare request payload
+            # Simple request without schema - let AI extract naturally
             payload = {
                 "model": "mistral-ocr-latest",
                 "document": {
                     "type": "image_url",
                     "image_url": f"data:image/png;base64,{base64_image}"
                 },
-                "document_annotation_format": betting_schema,
                 "include_image_base64": False
             }
             
@@ -256,100 +216,29 @@ class BettingSlipOCR:
             }
 
     def parse_mistral_structured_result(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse Mistral.ai structured OCR result into system format"""
+        """Parse Mistral.ai pure AI OCR result into system format"""
         
         result = self._get_default_result()
         
         try:
-            # Check if Mistral.ai returned structured data
-            if 'annotations' in ocr_result and ocr_result['annotations']:
-                annotation_data = ocr_result['annotations'][0]
-                
-                print(f"Processing Mistral.ai structured data", file=sys.stderr)
-                print(f"Raw annotation: {json.dumps(annotation_data, indent=2)}", file=sys.stderr)
-                
-                # Extract event information
-                if 'event_info' in annotation_data:
-                    event_info = annotation_data['event_info']
-                    
-                    # Parse teams
-                    if 'teams' in event_info:
-                        teams_str = event_info['teams']
-                        if ' - ' in teams_str:
-                            team_a, team_b = teams_str.split(' - ', 1)
-                            result['betA']['teamA'] = team_a.strip()
-                            result['betA']['teamB'] = team_b.strip()
-                            result['betB']['teamA'] = team_a.strip()
-                            result['betB']['teamB'] = team_b.strip()
-                    
-                    # Extract sport and league
-                    if 'sport' in event_info:
-                        result['sport'] = event_info['sport']
-                    if 'league' in event_info:
-                        result['league'] = event_info['league']
-                    
-                    # Extract and format date/time in DD-MM-YYYY format
-                    if 'date' in event_info and 'time' in event_info:
-                        date_str = event_info['date']  # e.g., "2025-09-28"
-                        time_str = event_info['time']  # e.g., "12:30"
-                        
-                        try:
-                            # Convert YYYY-MM-DD to DD-MM-YYYY
-                            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-                            formatted_date = date_obj.strftime('%d-%m-%Y')
-                            
-                            result['gameDate'] = date_str  # ISO for calendar
-                            result['gameTime'] = time_str
-                            result['gameDateFormatted'] = formatted_date  # DD-MM-YYYY for display
-                            result['gameDateTime'] = f"{formatted_date} {time_str}"  # Combined
-                            
-                            print(f"Date conversion: {date_str} -> {formatted_date}", file=sys.stderr)
-                        except ValueError as e:
-                            print(f"Date parsing failed: {e}", file=sys.stderr)
-                    
-                    # Extract profit percentage
-                    if 'profit_percentage' in event_info:
-                        result['totalProfitPercentage'] = event_info['profit_percentage']
-                
-                # Extract betting table data
-                if 'betting_table' in annotation_data:
-                    betting_table = annotation_data['betting_table']
-                    
-                    print(f"Found {len(betting_table)} betting entries in table", file=sys.stderr)
-                    
-                    # Map first bet to betA, second bet to betB
-                    if len(betting_table) >= 1:
-                        bet_data = betting_table[0]
-                        result['betA']['bettingHouse'] = bet_data.get('casa_aposta', '')
-                        result['betA']['betType'] = bet_data.get('chance', '')
-                        result['betA']['odds'] = bet_data.get('aposta', '0')
-                        result['betA']['profit'] = bet_data.get('lucro', '0')
-                        
-                    if len(betting_table) >= 2:
-                        bet_data = betting_table[1]
-                        result['betB']['bettingHouse'] = bet_data.get('casa_aposta', '')
-                        result['betB']['betType'] = bet_data.get('chance', '')
-                        result['betB']['odds'] = bet_data.get('aposta', '0')
-                        result['betB']['profit'] = bet_data.get('lucro', '0')
-                
-                print(f"Mistral.ai structured parsing successful", file=sys.stderr)
-                print(f"betA: {result['betA']['bettingHouse']} - Odds: {result['betA']['odds']}", file=sys.stderr)
-                print(f"betB: {result['betB']['bettingHouse']} - Odds: {result['betB']['odds']}", file=sys.stderr)
-                
+            print(f"Processing Mistral.ai pure AI OCR result", file=sys.stderr)
+            
+            # Extract from markdown content (main approach)
+            if 'pages' in ocr_result and ocr_result['pages']:
+                markdown_text = ocr_result['pages'][0].get('markdown', '')
+                if markdown_text:
+                    print("Parsing markdown content with AI intelligence...", file=sys.stderr)
+                    print(f"Raw markdown preview: {markdown_text[:500]}...", file=sys.stderr)
+                    result = self._parse_markdown_content_intelligent(markdown_text, result)
+                else:
+                    print("No markdown content found in Mistral.ai response", file=sys.stderr)
             else:
-                print("No structured annotations found in Mistral.ai response", file=sys.stderr)
-                
-                # Try to extract from markdown if available
-                if 'pages' in ocr_result and ocr_result['pages']:
-                    markdown_text = ocr_result['pages'][0].get('markdown', '')
-                    if markdown_text:
-                        print("Attempting to parse markdown content...", file=sys.stderr)
-                        result = self._parse_markdown_content(markdown_text, result)
+                print("No pages found in Mistral.ai response", file=sys.stderr)
             
             return result
             
         except Exception as e:
-            print(f"Error processing Mistral.ai structured result: {e}", file=sys.stderr)
+            print(f"Error processing Mistral.ai pure AI result: {e}", file=sys.stderr)
             return self._get_default_result()
 
     def _parse_markdown_content(self, markdown: str, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -393,6 +282,116 @@ class BettingSlipOCR:
                     result['totalProfitPercentage'] = percentage_match.group(1)
         
         print("Markdown fallback parsing completed", file=sys.stderr)
+        return result
+
+    def _parse_markdown_content_intelligent(self, markdown: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Intelligent parsing of Mistral.ai markdown content for betting data"""
+        
+        lines = markdown.split('\n')
+        
+        print(f"Processing {len(lines)} lines from Mistral.ai markdown", file=sys.stderr)
+        
+        table_rows = []
+        in_table = False
+        
+        for i, line in enumerate(lines):
+            line = line.strip()
+            
+            # Extract teams (look for "Team A - Team B" pattern)
+            if ' - ' in line and not '|' in line and not 'Casa' in line and not 'Chance' in line:
+                # Skip obvious non-team lines
+                skip_keywords = ['surebet', 'google', 'chrome', 'futebol', 'roi', 'total', 'mostrar', 'evento', 'aproximadamente']
+                if not any(keyword in line.lower() for keyword in skip_keywords):
+                    teams = line.split(' - ')
+                    if len(teams) == 2 and len(teams[0].strip()) > 2 and len(teams[1].strip()) > 2:
+                        result['betA']['teamA'] = teams[0].strip()
+                        result['betA']['teamB'] = teams[1].strip()
+                        result['betB']['teamA'] = teams[0].strip()
+                        result['betB']['teamB'] = teams[1].strip()
+                        print(f"Teams found: {teams[0].strip()} vs {teams[1].strip()}", file=sys.stderr)
+            
+            # Extract sport and league (look for "Futebol / Country - League" pattern)
+            if '/' in line and ('futebol' in line.lower() or 'handebol' in line.lower() or 'tênis' in line.lower()):
+                parts = line.split('/')
+                if len(parts) >= 2:
+                    result['sport'] = parts[0].strip()
+                    league_part = parts[1].strip()
+                    if ' - ' in league_part:
+                        league_parts = league_part.split(' - ', 1)
+                        result['league'] = f"{league_parts[0].strip()} - {league_parts[1].strip()}"
+                    else:
+                        result['league'] = league_part
+                    print(f"Sport/League found: {result['sport']} / {result['league']}", file=sys.stderr)
+            
+            # Extract date and time (look for YYYY-MM-DD HH:MM pattern)
+            date_match = re.search(r'(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})', line)
+            if date_match:
+                date_str = date_match.group(1)
+                time_str = date_match.group(2)
+                
+                try:
+                    # Convert to DD-MM-YYYY format
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    formatted_date = date_obj.strftime('%d-%m-%Y')
+                    
+                    result['gameDate'] = date_str  # ISO for calendar
+                    result['gameTime'] = time_str
+                    result['gameDateFormatted'] = formatted_date  # DD-MM-YYYY for display
+                    result['gameDateTime'] = f"{formatted_date} {time_str}"  # Combined
+                    
+                    print(f"Date/Time found: {date_str} {time_str} -> {formatted_date} {time_str}", file=sys.stderr)
+                except ValueError:
+                    pass
+            
+            # Extract profit percentage (look for percentage not related to ROI)
+            if re.search(r'\d+\.\d+%', line) and 'roi' not in line.lower():
+                percentage_match = re.search(r'(\d+\.\d+%)', line)
+                if percentage_match:
+                    result['totalProfitPercentage'] = percentage_match.group(1)
+                    print(f"Profit percentage found: {result['totalProfitPercentage']}", file=sys.stderr)
+            
+            # Detect table structure (markdown tables with |)
+            if '|' in line and ('casa' in line.lower() or 'chance' in line.lower() or 'aposta' in line.lower()):
+                in_table = True
+                print(f"Table header detected: {line}", file=sys.stderr)
+                continue
+            
+            # Extract table rows
+            if in_table and '|' in line and line.count('|') >= 3:
+                # Split by | and clean up
+                cells = [cell.strip() for cell in line.split('|') if cell.strip()]
+                if len(cells) >= 4:  # Casa, Chance, Aposta, Lucro
+                    table_rows.append(cells)
+                    print(f"Table row found: {cells}", file=sys.stderr)
+            
+            # Stop table processing if we hit non-table content
+            if in_table and '|' not in line and line.strip() and not line.startswith('-'):
+                in_table = False
+        
+        # Process table data
+        if table_rows:
+            print(f"Processing {len(table_rows)} table rows", file=sys.stderr)
+            
+            # First row -> betA, second row -> betB
+            if len(table_rows) >= 1:
+                row = table_rows[0]
+                if len(row) >= 4:
+                    result['betA']['bettingHouse'] = row[0]
+                    result['betA']['betType'] = row[1]
+                    result['betA']['odds'] = row[2]
+                    result['betA']['profit'] = row[3]
+                    print(f"BetA: {row[0]} - {row[1]} - {row[2]} - {row[3]}", file=sys.stderr)
+            
+            if len(table_rows) >= 2:
+                row = table_rows[1]
+                if len(row) >= 4:
+                    result['betB']['bettingHouse'] = row[0]
+                    result['betB']['betType'] = row[1]
+                    result['betB']['odds'] = row[2]
+                    result['betB']['profit'] = row[3]
+                    print(f"BetB: {row[0]} - {row[1]} - {row[2]} - {row[3]}", file=sys.stderr)
+        
+        print("Intelligent markdown parsing completed", file=sys.stderr)
         return result
 
     def parse_ocr_space_json(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
