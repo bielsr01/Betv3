@@ -285,10 +285,17 @@ class BettingSlipOCR:
             # "Evento em aproximadamente 17 horas (2025-09-25 23:00 -03:00)"
             
             date_patterns = [
+                # Normal patterns with spaces
                 r'Evento em \d+ dias?\s*\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})',
                 r'Evento em aproximadamente \d+ horas?\s*\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})',
                 r'Evento em \d+ dia\s*\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})',
-                r'\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})'
+                # Malformed patterns without spaces - "2025-09-2712:30-03:00)"
+                r'Evento em \d+ dias?\s*(\d{4}-\d{2}-\d{2})(\d{2}:\d{2})',
+                r'Evento em aproximadamente \d+ horas?\s*(\d{4}-\d{2}-\d{2})(\d{2}:\d{2})',
+                r'Evento em \d+ dia\s*(\d{4}-\d{2}-\d{2})(\d{2}:\d{2})',
+                # Generic patterns
+                r'\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})',
+                r'(\d{4}-\d{2}-\d{2})(\d{2}:\d{2})'
             ]
             
             for pattern in date_patterns:
@@ -341,8 +348,8 @@ class BettingSlipOCR:
         
         betting_houses = []
         
-        # Brazilian betting house names
-        br_houses = ['aposta1', 'marjosports', 'bravobet', 'betnacional', 'bet7k', 'blaze', 'betfast']
+        # Brazilian betting house names (including variations with spaces)
+        br_houses = ['aposta1', 'aposta 1', 'marjosports', 'bravobet', 'betnacional', 'bet7k', 'blaze', 'betfast']
         
         for line in lines:
             line_clean = line.strip()
@@ -352,13 +359,14 @@ class BettingSlipOCR:
             for house in br_houses:
                 if house in line_clean.lower():
                     house_found = house
+                    print(f"Found betting house '{house}' in line: {line_clean}", file=sys.stderr)
                     break
             
             if house_found:
                 betting_info = self._parse_betting_house_line(line_clean, house_found)
                 if betting_info:
-                    betting_houses.append(betting_info)
                     print(f"Extracted betting house: {betting_info}", file=sys.stderr)
+                    betting_houses.append(betting_info)
         
         return betting_houses
 
