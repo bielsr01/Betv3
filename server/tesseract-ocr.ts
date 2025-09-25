@@ -409,26 +409,50 @@ function extractDataFromLines(lines: string[]): any {
       };
     }
     
-    // Enhanced betting data extraction with better number parsing
+    // Padrões baseados nos dados reais dos logs:
+    // 'Betfast Acima19.522operiodo 2.200 6 159USDv -) o 7.66'
+    // 'Blaze(BR) Abaixo19.520operiodo 1910o (E) 183.14 usDv -) 7.66'
     const betHousePatterns = [
-      { name: 'Betfast', pattern: /betfast.*?acima\s*(\d+[\.,]?\d*)\s*.*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+)/i },
-      { name: 'Blaze', pattern: /blaze.*?abaixo\s*(\d+[\.,]?\d*)\s*.*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+)/i },
-      { name: 'Aposta1', pattern: /aposta.*?total\s*(\d+[\.,]?\d*)\s*.*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+)/i },
-      { name: 'Betfair', pattern: /betfair.*?(?:abaixo|under)\s*(\d+[\.,]?\d*)\s*.*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+).*?(\d+[\.,]?\d+)/i }
+      { 
+        name: 'Betfast', 
+        pattern: /betfast\s+acima(\d+\.?\d+)\w*.*?(\d+\.?\d+).*?(\d+).*?usd.*?(\d+\.?\d+)/i,
+        betType: 'Acima'
+      },
+      { 
+        name: 'Blaze', 
+        pattern: /blaze.*?abaixo(\d+\.?\d+)\w*.*?(\d+).*?(\d+\.?\d+).*?usd.*?(\d+\.?\d+)/i,
+        betType: 'Abaixo'
+      },
+      // Padrões alternativos mais flexíveis para capturar dados "colados"
+      { 
+        name: 'Betfast-Alt', 
+        pattern: /betfast.*?(\d+\.?\d+).*?(\d+\.?\d+).*?(\d+).*?(\d+\.?\d+)/i,
+        betType: 'Acima'
+      },
+      { 
+        name: 'Blaze-Alt', 
+        pattern: /blaze.*?(\d+\.?\d+).*?(\d+).*?(\d+\.?\d+).*?(\d+\.?\d+)/i,
+        betType: 'Abaixo'
+      }
     ];
     
     for (const house of betHousePatterns) {
       const match = cleanLine.match(house.pattern);
       if (match) {
+        console.log(`${house.name} pattern matched:`, match);
         const [, threshold, odds, stake, profit] = match;
-        extracted.bets.push({
+        
+        const betData = {
           house: house.name,
-          betType: house.name === 'Betfast' ? 'Acima' : house.name === 'Blaze' ? 'Abaixo' : 'Total',
+          betType: house.betType,
           threshold: parseFloat(threshold.replace(',', '.')),
           odds: parseFloat(odds.replace(',', '.')),
           stake: parseFloat(stake.replace(',', '.')),
           profit: parseFloat(profit.replace(',', '.'))
-        });
+        };
+        
+        console.log(`Extracted bet data for ${house.name}:`, betData);
+        extracted.bets.push(betData);
       }
     }
     
