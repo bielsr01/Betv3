@@ -114,30 +114,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: 'Perplexity API key not configured' });
       }
 
-      // Call Perplexity API directly for raw text extraction
+      // Call Perplexity API with proper image format
       const cleanBase64 = imageBase64.includes('base64,') 
         ? imageBase64.split('base64,')[1] 
         : imageBase64;
 
-      const imageUrl = `data:image/png;base64,${cleanBase64}`;
-      
       const payload = {
         model: "llama-3.1-sonar-small-128k-online",
         messages: [
           {
-            role: "system",
-            content: "You are an OCR system. Extract all visible text from the image exactly as it appears. Do not interpret, translate, or format the text. Return only the raw text content with line breaks preserved."
-          },
-          {
             role: "user",
-            content: `Extract all text from this image:\n\n![Image](${imageUrl})`
+            content: [
+              {
+                type: "text",
+                text: "Extract all visible text from this image exactly as it appears. Do not interpret, translate, or format the text. Return only the raw text content with line breaks preserved."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/png;base64,${cleanBase64}`
+                }
+              }
+            ]
           }
         ],
         max_tokens: 2000,
-        temperature: 0.1,
-        stream: false,
-        return_images: false,
-        return_related_questions: false
+        temperature: 0.1
       };
 
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -150,7 +152,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (!response.ok) {
-        throw new Error(`Perplexity API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Perplexity API error details:', errorText);
+        throw new Error(`Perplexity API error: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
