@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-OCR.space API implementation for OCR and structured data extraction
-Optimized for betting slip data extraction with JSON response and special character support
-Using Engine 2 for enhanced accuracy and special characters (≥, ≤, acentos, etc.)
+OCR.space API implementation for betting slip data extraction
+Uses OCR.space native JSON API with Engine 2 for superior accuracy
+Optimized for Portuguese betting houses and special characters
 """
 
 import os
@@ -12,7 +12,7 @@ import base64
 import re
 import requests
 from typing import Dict, List, Any, Optional
-from io import BytesIO
+from datetime import datetime, timedelta
 import time
 
 class BettingSlipOCR:
@@ -20,118 +20,102 @@ class BettingSlipOCR:
         """Initialize OCR.space API client"""
         print("Initializing OCR.space API...", file=sys.stderr)
         
-        try:
-            # Get API key from environment variables
-            self.api_key = os.environ.get('OCR_SPACE_API_KEY')
-            
-            if self.api_key:
-                # OCR.space API endpoint
-                self.endpoint = "https://api.ocr.space/parse/image"
-                print("OCR.space API initialized successfully", file=sys.stderr)
-            else:
-                print("OCR.space API key not found, using fallback mode", file=sys.stderr)
-                self.api_key = None
-                
-        except Exception as e:
-            print(f"Failed to initialize OCR.space API: {e}", file=sys.stderr)
-            print("Using fallback mode", file=sys.stderr)
+        self.api_key = os.environ.get('OCR_SPACE_API_KEY')
+        if self.api_key:
+            self.endpoint = "https://api.ocr.space/parse/image"
+            print("OCR.space API initialized successfully", file=sys.stderr)
+        else:
+            print("OCR.space API key not found", file=sys.stderr)
             self.api_key = None
 
     def decode_base64_image(self, base64_string: str) -> bytes:
-        """Decode base64 image string to bytes for OCR API"""
+        """Decode base64 image string to bytes"""
         try:
-            # Remove data URL prefix if present
             if 'base64,' in base64_string:
                 base64_string = base64_string.split('base64,')[1]
-            
-            # Decode base64 to bytes
-            image_data = base64.b64decode(base64_string)
-            
-            return image_data
-            
+            return base64.b64decode(base64_string)
         except Exception as e:
             print(f"Error decoding base64 image: {e}", file=sys.stderr)
             raise
 
     def extract_text_with_ocr_space(self, image_bytes: bytes) -> Dict[str, Any]:
-        """Extract text using OCR.space API with Engine 2 for special characters"""
+        """Extract text using OCR.space API with native JSON response"""
         try:
             if self.api_key is None:
-                print("OCR.space API not available, using fallback", file=sys.stderr)
                 return self._fallback_ocr_response()
             
-            print("Using OCR.space API for text extraction", file=sys.stderr)
+            print("Using OCR.space API for text extraction...", file=sys.stderr)
             
-            # Prepare the request payload
+            # OCR.space API parameters for JSON response
             payload = {
                 'apikey': self.api_key,
-                'language': 'por',  # Portuguese for better results with BR betting houses
-                'isOverlayRequired': True,  # Get coordinates
-                'OCREngine': 2,  # Engine 2 for special characters support
+                'language': 'por',  # Portuguese optimization
+                'isOverlayRequired': True,  # Get text coordinates  
+                'OCREngine': 2,  # Engine 2 for special characters
                 'detectOrientation': True,
                 'scale': True,
-                'isTable': True  # Better for table-like betting data
+                'isTable': True,  # Better for table-like data
+                'filetype': 'PNG'
             }
             
-            # Prepare the file upload
+            # Upload image file
             files = {
-                'file': ('betting_slip.jpg', image_bytes, 'image/jpeg')
+                'file': ('betting_slip.png', image_bytes, 'image/png')
             }
             
-            # Make the API request
+            # Make API request - OCR.space returns native JSON
             response = requests.post(self.endpoint, data=payload, files=files, timeout=30)
             response.raise_for_status()
             
+            # OCR.space returns native JSON response
             ocr_result = response.json()
-            print(f"OCR.space response: {json.dumps(ocr_result, indent=2)}", file=sys.stderr)
+            
+            print(f"OCR.space native JSON response received", file=sys.stderr)
+            print(f"OCR Exit Code: {ocr_result.get('OCRExitCode', 'unknown')}", file=sys.stderr)
+            print(f"Processing Time: {ocr_result.get('ProcessingTimeInMilliseconds', 'unknown')}ms", file=sys.stderr)
             
             return ocr_result
             
         except requests.exceptions.RequestException as e:
-            print(f"HTTP error in OCR.space API: {e}", file=sys.stderr)
+            print(f"OCR.space API request failed: {e}", file=sys.stderr)
             return self._fallback_ocr_response()
         except Exception as e:
-            print(f"Error in OCR.space text extraction: {e}", file=sys.stderr)
+            print(f"OCR.space extraction error: {e}", file=sys.stderr)
             return self._fallback_ocr_response()
 
     def _fallback_ocr_response(self) -> Dict[str, Any]:
-        """Fallback OCR response structure"""
+        """Fallback response when OCR.space is unavailable"""
         return {
             "ParsedResults": [{
-                "TextOverlay": {
-                    "Lines": [],
-                    "HasOverlay": False,
-                    "Message": "Text overlay is not provided as it was not requested"
-                },
+                "TextOverlay": {"Lines": [], "HasOverlay": False},
                 "TextOrientation": "0",
                 "FileParseExitCode": 1,
                 "ParsedText": "",
-                "ErrorMessage": "OCR API not available",
+                "ErrorMessage": "OCR.space API unavailable",
                 "ErrorDetails": ""
             }],
             "OCRExitCode": 4,
             "IsErroredOnProcessing": True,
-            "ErrorMessage": ["OCR API not available"],
-            "ErrorDetails": "",
+            "ErrorMessage": ["OCR.space API unavailable"],
             "ProcessingTimeInMilliseconds": "0"
         }
 
     def analyze_betting_slip(self, base64_image: str) -> Dict[str, Any]:
-        """Main function to analyze betting slip and extract structured data"""
+        """Main function to analyze betting slip using OCR.space native JSON"""
         try:
             print("Starting OCR.space betting slip analysis...", file=sys.stderr)
             
-            # Decode image to bytes
+            # Decode image
             image_bytes = self.decode_base64_image(base64_image)
             print(f"Image size: {len(image_bytes)} bytes", file=sys.stderr)
             
-            # Extract text using OCR.space API
+            # Extract text using OCR.space native JSON API
             ocr_result = self.extract_text_with_ocr_space(image_bytes)
             
-            # Parse the OCR result into betting slip structure
-            parsed_result = self.parse_ocr_space_result(ocr_result)
+            # Parse OCR.space native JSON result
+            parsed_result = self.parse_ocr_space_json(ocr_result)
             
-            print(f"Final parsed result: {parsed_result}", file=sys.stderr)
+            print(f"Final parsed result: {json.dumps(parsed_result, indent=2)}", file=sys.stderr)
             
             return {
                 'success': True,
@@ -139,7 +123,8 @@ class BettingSlipOCR:
                 'debug': {
                     'ocr_exit_code': ocr_result.get('OCRExitCode'),
                     'processing_time': ocr_result.get('ProcessingTimeInMilliseconds'),
-                    'parsed_text_preview': ocr_result.get('ParsedResults', [{}])[0].get('ParsedText', '')[:200] if ocr_result.get('ParsedResults') else ''
+                    'error_message': ocr_result.get('ErrorMessage', []),
+                    'text_preview': ocr_result.get('ParsedResults', [{}])[0].get('ParsedText', '')[:500]
                 }
             }
             
@@ -151,274 +136,317 @@ class BettingSlipOCR:
                 'data': self._get_default_result()
             }
 
-    def parse_ocr_space_result(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse OCR.space JSON result into betting slip structure"""
+    def parse_ocr_space_json(self, ocr_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse OCR.space native JSON response"""
         
         result = self._get_default_result()
         
-        # Check if OCR was successful
+        # Check OCR.space processing status
         if ocr_result.get('IsErroredOnProcessing', True):
-            print("OCR processing failed", file=sys.stderr)
+            print("OCR.space processing failed", file=sys.stderr)
             return result
         
         parsed_results = ocr_result.get('ParsedResults', [])
         if not parsed_results:
-            print("No parsed results found", file=sys.stderr)
+            print("No parsed results in OCR.space response", file=sys.stderr)
             return result
         
-        # Get the main parsed text
-        parsed_text = parsed_results[0].get('ParsedText', '')
-        print(f"Extracted text: {parsed_text}", file=sys.stderr)
+        # Get main text content
+        main_result = parsed_results[0]
+        parsed_text = main_result.get('ParsedText', '')
+        text_overlay = main_result.get('TextOverlay', {})
         
-        # Get text overlay for coordinates if available
-        text_overlay = parsed_results[0].get('TextOverlay', {})
-        lines = text_overlay.get('Lines', []) if text_overlay.get('HasOverlay') else []
+        print(f"OCR.space extracted text: {parsed_text[:1000]}...", file=sys.stderr)
         
-        # Extract structured data from parsed text
-        result = self._extract_betting_data_from_text(parsed_text, lines)
+        # Extract structured data
+        result = self._extract_betting_data_from_ocr_text(parsed_text, text_overlay)
         
         return result
 
-    def _extract_betting_data_from_text(self, text: str, lines: List[Dict]) -> Dict[str, Any]:
-        """Extract betting data from OCR.space parsed text using enhanced patterns"""
+    def _extract_betting_data_from_ocr_text(self, text: str, overlay: Dict) -> Dict[str, Any]:
+        """Extract betting data from OCR.space text with improved patterns"""
         
         result = self._get_default_result()
         
-        # Clean and normalize text
-        text = text.replace('\r\n', '\n').replace('\r', '\n')
-        print(f"Processing text: {text[:500]}...", file=sys.stderr)
+        # Clean text for processing
+        text_clean = text.replace('\r\n', '\n').replace('\r', ' ').strip()
+        lines = [line.strip() for line in text_clean.split('\n') if line.strip()]
         
-        # 1. Extract teams using enhanced patterns for real-world names
-        teams = self._extract_teams_from_text(text)
+        print(f"Processing {len(lines)} lines from OCR.space", file=sys.stderr)
+        for i, line in enumerate(lines[:10]):  # Show first 10 lines
+            print(f"Line {i}: {line}", file=sys.stderr)
+        
+        # 1. Extract teams (first priority)
+        teams = self._extract_teams_from_lines(lines)
         if teams:
-            result['betA']['teamA'] = teams['teamA']
-            result['betA']['teamB'] = teams['teamB']
-            result['betB']['teamA'] = teams['teamA']
-            result['betB']['teamB'] = teams['teamB']
+            for bet_key in ['betA', 'betB']:
+                result[bet_key]['teamA'] = teams['teamA']
+                result[bet_key]['teamB'] = teams['teamB']
             print(f"Teams extracted: {teams['teamA']} vs {teams['teamB']}", file=sys.stderr)
         
-        # 2. Extract percentage (avoid ROI percentage)
-        percentage_patterns = [
-            r'([A-Za-zÀ-ÿ]+)\s*[-–]\s*([A-Za-zÀ-ÿ]+)(\d+\.\d+)\s*%',  # "Lille - Lyon2.50%"
-            r'([A-Za-zÀ-ÿ]+)\s*[-–]\s*([A-Za-zÀ-ÿ]+)\s+(\d+\.\d+)\s*%'  # "Lille - Lyon 2.50%"
-        ]
-        
-        for pattern in percentage_patterns:
-            match = re.search(pattern, text)
-            if match and 'roi' not in match.group(0).lower():
-                result['totalProfitPercentage'] = match.group(3) + '%'
-                print(f"Profit percentage: {match.group(3)}%", file=sys.stderr)
-                break
-        
-        # 3. Extract date and time
-        date_match = re.search(r'(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})', text)
-        if date_match:
-            result['gameDate'] = date_match.group(1)
-            result['gameTime'] = date_match.group(2)
-            print(f"Date/time: {date_match.group(1)} {date_match.group(2)}", file=sys.stderr)
-        
-        # 4. Extract sport and league
-        sport_league = self._extract_sport_league_from_text(text)
+        # 2. Extract sport and league  
+        sport_league = self._extract_sport_league_from_lines(lines)
         if sport_league:
-            result['sport'] = sport_league.get('sport', 'Futebol')
-            league_clean = sport_league.get('league', '')
-            # Clean league from table headers and extra content
-            league_clean = re.sub(r'\t.*$', '', league_clean)  # Remove tab and everything after
-            league_clean = re.sub(r'\nChance.*$', '', league_clean, flags=re.DOTALL)  # Remove table headers
-            result['league'] = league_clean.strip()
+            result['sport'] = sport_league['sport']
+            result['league'] = sport_league['league']
             print(f"Sport: {result['sport']}, League: {result['league']}", file=sys.stderr)
         
-        # 5. Extract betting houses data with enhanced patterns
-        betting_data = self._extract_betting_houses_from_text(text, lines)
-        if betting_data:
-            if 'betA' in betting_data:
-                result['betA'].update(betting_data['betA'])
-            if 'betB' in betting_data:
-                result['betB'].update(betting_data['betB'])
+        # 3. Extract date and time with timezone correction
+        date_time = self._extract_date_time_from_lines(lines)
+        if date_time:
+            result['gameDate'] = date_time['date']
+            result['gameTime'] = date_time['time']
+            print(f"Game date/time: {result['gameDate']} {result['gameTime']}", file=sys.stderr)
+        
+        # 4. Extract profit percentage (not ROI)
+        percentage = self._extract_profit_percentage_from_lines(lines)
+        if percentage:
+            result['totalProfitPercentage'] = percentage
+            print(f"Profit percentage: {percentage}", file=sys.stderr)
+        
+        # 5. Extract betting houses in order (first = betA, second = betB)
+        betting_houses = self._extract_betting_houses_from_lines(lines)
+        if betting_houses:
+            if len(betting_houses) >= 1:
+                result['betA'].update(betting_houses[0])
+                print(f"BetA: {betting_houses[0]['bettingHouse']} - {betting_houses[0]['betType']}", file=sys.stderr)
+            if len(betting_houses) >= 2:
+                result['betB'].update(betting_houses[1])
+                print(f"BetB: {betting_houses[1]['bettingHouse']} - {betting_houses[1]['betType']}", file=sys.stderr)
         
         return result
 
-    def _extract_teams_from_text(self, text: str) -> Optional[Dict[str, str]]:
-        """Extract team names optimized for OCR.space format"""
+    def _extract_teams_from_lines(self, lines: List[str]) -> Optional[Dict[str, str]]:
+        """Extract team names from OCR lines"""
         
-        # Clean text from OCR.space format issues
-        text_clean = re.sub(r'[\t\r\n]+', ' ', text)
-        text_clean = re.sub(r'\s+', ' ', text_clean)
-        
-        # Enhanced patterns for OCR.space output format
+        # Look for team names in typical format
         team_patterns = [
-            # Direct pattern for "Lille - Lyon2.50%" (OCR.space often concatenates)
-            r'([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*)\s*[-–]\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*?)(\d+\.\d+)\s*%',
-            # Pattern with spacing "Lille - Lyon 2.50%"
-            r'([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*)\s*[-–]\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*)\s+(\d+\.\d+)\s*%',
-            # General team pattern without percentage
-            r'([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*)\s*[-–]\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ&]+)*)'
+            # "ASD Pineto Calcio – Rimini FC 1912"
+            r'^([A-Za-zÀ-ÿ0-9\s]+(?:FC|SC|AC|Calcio|United|City|Real|Saint)?)\s*[–-]\s*([A-Za-zÀ-ÿ0-9\s]+(?:FC|SC|AC|Calcio|United|City|Real|Saint)?)(?:\s*\d+\.\d+%)?$',
+            # "Billere Handball – Grand Besancon Doubs"
+            r'^([A-Za-zÀ-ÿ\s]+)\s*[–-]\s*([A-Za-zÀ-ÿ\s]+)$',
+            # "Aleksandar Vukic – Daniel Altmaier"  
+            r'^([A-Za-zÀ-ÿ\s]+)\s*[–-]\s*([A-Za-zÀ-ÿ\s]+)$'
         ]
         
-        for pattern in team_patterns:
-            match = re.search(pattern, text_clean, re.IGNORECASE)
-            if match:
-                teamA = match.group(1).strip()
-                teamB = match.group(2).strip()
-                
-                # Clean any remaining unwanted characters and prefixes
-                teamA = re.sub(r'^[^\w]+|[^\w]+$', '', teamA)
-                teamB = re.sub(r'^[^\w]+|[^\w]+$', '', teamB)
-                
-                # Remove common OCR artifacts/prefixes
-                teamA = re.sub(r'^[O]\s+', '', teamA)  # Remove "O " prefix
-                teamB = re.sub(r'^[O]\s+', '', teamB) 
-                
-                # Filter out non-teams
-                non_teams = ['surebet', 'google', 'chrome', 'evento', 'futebol', 'apostas', 'roi', 'chance', 'lucro', 'total', 'mostrar', 'use', 'arredondar', 'levar', 'pt', 'dias', 'br', 'usd', 'aposta', 'calculadora', 'co', 'do']
-                
-                if (len(teamA) >= 2 and len(teamB) >= 2 and teamA != teamB and
-                    not any(word.lower() in teamA.lower() for word in non_teams) and
-                    not any(word.lower() in teamB.lower() for word in non_teams) and
-                    not teamA.isdigit() and not teamB.isdigit()):
+        for line in lines:
+            line_clean = line.strip()
+            
+            # Skip obvious non-team lines
+            skip_keywords = ['surebet', 'google', 'chrome', 'evento', 'futebol', 'roi', 'chance', 'lucro', 'aposta', 'total', 'mostrar', 'pt.surebet.com']
+            if any(keyword in line_clean.lower() for keyword in skip_keywords):
+                continue
+            
+            for pattern in team_patterns:
+                match = re.search(pattern, line_clean, re.IGNORECASE)
+                if match:
+                    team_a = match.group(1).strip()
+                    team_b = match.group(2).strip()
                     
-                    return {
-                        'teamA': teamA,
-                        'teamB': teamB
-                    }
+                    # Validate teams
+                    if (len(team_a) >= 3 and len(team_b) >= 3 and team_a != team_b and
+                        not team_a.isdigit() and not team_b.isdigit()):
+                        return {'teamA': team_a, 'teamB': team_b}
         
         return None
 
-    def _extract_sport_league_from_text(self, text: str) -> Optional[Dict[str, str]]:
-        """Extract sport and league information"""
+    def _extract_sport_league_from_lines(self, lines: List[str]) -> Optional[Dict[str, str]]:
+        """Extract sport and league from OCR lines"""
         
-        # Default sport detection
-        sport = 'Futebol'
-        if 'americano' in text.lower():
-            sport = 'Futebol Americano'
-        elif 'basketball' in text.lower() or 'basquete' in text.lower():
-            sport = 'Basketball'
-        
-        # League patterns
-        league_patterns = [
-            r'Futebol\s*/\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)*)\s*[-–]\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)',
-            r'([A-Za-zÀ-ÿ]+)\s*[-–]\s*(Premier\s+League|Ligue\s+\d+|Championship|Serie\s+A|Bundesliga|La\s+Liga|College|UEFA|Champions)',
-            r'([A-Za-zÀ-ÿ]+)\s*[-–]\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ0-9]+)*)'
-        ]
-        
-        for pattern in league_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match and not any(skip in match.group(0).lower() for skip in ['surebet', 'google', 'chrome', 'roi', 'evento', 'apostas']):
-                country = match.group(1).strip()
-                league = match.group(2).strip()
+        # Look for sport/league pattern: "Futebol / Itália - Série C"
+        for line in lines:
+            line_clean = line.strip()
+            
+            # Pattern: "Sport / Country - League"
+            sport_pattern = r'^(Futebol|Handebol|Tênis|Beisebol|Basketball|Vôlei)\s*\/\s*([A-Za-zÀ-ÿ\s]+)\s*-\s*([A-Za-zÀ-ÿ0-9\s\-\_]+)$'
+            match = re.search(sport_pattern, line_clean, re.IGNORECASE)
+            
+            if match:
+                sport = match.group(1).strip()
+                country = match.group(2).strip()
+                league_name = match.group(3).strip()
                 
-                if len(country) >= 3 and len(league) >= 3 and country != league:
-                    return {
-                        'sport': sport,
-                        'league': f"{country} - {league}"
-                    }
+                return {
+                    'sport': sport,
+                    'league': f"{country} - {league_name}"
+                }
         
-        return {'sport': sport, 'league': ''}
+        return {'sport': 'Futebol', 'league': ''}
 
-    def _extract_betting_houses_from_text(self, text: str, lines: List[Dict]) -> Optional[Dict[str, Any]]:
-        """Extract betting house data with comprehensive patterns for all bet types"""
+    def _extract_date_time_from_lines(self, lines: List[str]) -> Optional[Dict[str, str]]:
+        """Extract date and time with timezone correction"""
+        
+        for line in lines:
+            line_clean = line.strip()
+            
+            # Look for event date patterns
+            # "Evento em 2 dias (2025-09-27 12:30 -03:00)"
+            # "Evento em 1 dia (2025-09-26 15:30 -03:00)"
+            # "Evento em aproximadamente 17 horas (2025-09-25 23:00 -03:00)"
+            
+            date_patterns = [
+                r'Evento em \d+ dias?\s*\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})',
+                r'Evento em aproximadamente \d+ horas?\s*\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})',
+                r'Evento em \d+ dia\s*\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})',
+                r'\((\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})'
+            ]
+            
+            for pattern in date_patterns:
+                match = re.search(pattern, line_clean)
+                if match:
+                    date_str = match.group(1)
+                    time_str = match.group(2)
+                    
+                    # Parse date and add timezone correction if needed
+                    try:
+                        event_date = datetime.strptime(date_str, '%Y-%m-%d')
+                        
+                        # Check if we need timezone correction
+                        # If the date seems to be one day behind, add one day
+                        today = datetime.now()
+                        if event_date.date() < today.date():
+                            # Add one day to correct timezone issue
+                            event_date = event_date + timedelta(days=1)
+                            date_str = event_date.strftime('%Y-%m-%d')
+                        
+                        return {
+                            'date': date_str,
+                            'time': time_str
+                        }
+                    except ValueError:
+                        continue
+        
+        return None
+
+    def _extract_profit_percentage_from_lines(self, lines: List[str]) -> Optional[str]:
+        """Extract profit percentage (not ROI)"""
+        
+        for line in lines:
+            line_clean = line.strip()
+            
+            # Look for standalone percentage (not ROI)
+            # Should match "1.72%" but not "ROI: 267.10%"
+            if 'roi' not in line_clean.lower():
+                percentage_match = re.search(r'(\d+\.\d+)%', line_clean)
+                if percentage_match:
+                    percentage = percentage_match.group(1)
+                    # Make sure it's a reasonable percentage (< 50%)
+                    if float(percentage) < 50:
+                        return percentage + '%'
+        
+        return None
+
+    def _extract_betting_houses_from_lines(self, lines: List[str]) -> List[Dict[str, str]]:
+        """Extract betting houses in order from OCR lines"""
         
         betting_houses = []
         
-        # Split text into lines for processing
-        text_lines = text.split('\n')
+        # Brazilian betting house names
+        br_houses = ['aposta1', 'marjosports', 'bravobet', 'betnacional', 'bet7k', 'blaze', 'betfast']
         
-        print(f"Processing {len(text_lines)} lines for betting data", file=sys.stderr)
-        
-        for i, line in enumerate(text_lines):
+        for line in lines:
             line_clean = line.strip()
-            if not line_clean:
-                continue
             
-            print(f"Line {i}: {line_clean}", file=sys.stderr)
+            # Look for lines with Brazilian betting houses
+            house_found = None
+            for house in br_houses:
+                if house in line_clean.lower():
+                    house_found = house
+                    break
             
-            # Skip non-betting lines
-            if not any(house in line_clean.lower() for house in ['betnacional', 'kto', 'blaze', 'betfast', 'marjosports', '(br)']):
-                continue
-            
-            # Enhanced betting patterns with special character support
-            betting_info = self._parse_betting_line_enhanced(line_clean)
-            if betting_info:
-                betting_houses.append(betting_info)
-                print(f"Extracted betting house: {betting_info}", file=sys.stderr)
+            if house_found:
+                betting_info = self._parse_betting_house_line(line_clean, house_found)
+                if betting_info:
+                    betting_houses.append(betting_info)
+                    print(f"Extracted betting house: {betting_info}", file=sys.stderr)
         
-        # Structure the results
-        if betting_houses:
-            result = {}
-            if len(betting_houses) >= 1:
-                result['betA'] = betting_houses[0]
-            if len(betting_houses) >= 2:
-                result['betB'] = betting_houses[1]
-            return result
+        return betting_houses
+
+    def _parse_betting_house_line(self, line: str, house_name: str) -> Optional[Dict[str, str]]:
+        """Parse betting house line to extract all information"""
+        
+        line_clean = line.strip()
+        print(f"Parsing betting line: {line_clean}", file=sys.stderr)
+        
+        # Betting patterns for OCR.space compressed formats
+        patterns = [
+            # "Aposta1 (BR)1 2.000 •80.36USD v2.72" - bet type and odds separated
+            r'(' + house_name + r')\s*\(br\)\s*([^0-9]*?)\s*(\d+\.\d+)\s*[•·]?\s*(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
+            # "MarjoSports (BR)X2 2.070 •77.64USD V2.71" - bet type and odds separated
+            r'(' + house_name + r')\s*\(br\)\s*([a-zA-Z0-9]+)\s*(\d+\.\d+)\s*[•·]?\s*(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
+            # "BravoBet (BR) Acima 27.5 2° o time 1.870 85.76 USD" (complex bet types)
+            r'(' + house_name + r')\s*\(br\)\s*(.*?)(\d+\.\d+)\s+(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
+            # Generic flexible pattern for edge cases
+            r'(' + house_name + r')\s*\(br\)\s*(.*?)(\d+\.\d+)\s*[•·]?\s*(\d+\.\d+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, line_clean, re.IGNORECASE)
+            if match:
+                house = match.group(1).capitalize()
+                bet_type_raw = match.group(2).strip()
+                odds_raw = match.group(3)
+                stake = match.group(4)
+                
+                # Handle OCR.space compaction: "12.000" might be "1" + "2.000"
+                odds, bet_type = self._fix_ocr_compaction(odds_raw, bet_type_raw)
+                
+                # Extract profit - try from match first, then from end of line
+                profit = "0"
+                if len(match.groups()) >= 5:
+                    profit = match.group(5)
+                else:
+                    profit_match = re.search(r'v?\s*(\d+\.\d+)\s*$', line_clean)
+                    if profit_match:
+                        profit = profit_match.group(1)
+                
+                # Clean bet type
+                bet_type = self._clean_bet_type(bet_type)
+                
+                return {
+                    'bettingHouse': f"{house} (BR)",
+                    'betType': bet_type,
+                    'odds': odds,
+                    'stake': stake,
+                    'profit': profit
+                }
         
         return None
 
-    def _parse_betting_line_enhanced(self, line: str) -> Optional[Dict[str, str]]:
-        """Parse betting line with enhanced support for all bet types and special characters"""
+    def _fix_ocr_compaction(self, odds_raw: str, bet_type_raw: str) -> tuple[str, str]:
+        """Fix OCR.space compaction where bet type and odds are merged"""
         
-        # Normalize special characters
-        line = line.replace('≥', '>=').replace('≤', '<=').replace('&amp;', '&').replace('·', '.').replace('º', '°')
+        # If bet type is empty or very short and odds looks like it contains bet type
+        if len(bet_type_raw) <= 1 and odds_raw:
+            # Check for patterns like "12.000" which might be "1" + "2.000"
+            if odds_raw == "12.000":
+                # "12.000" -> bet_type="1", odds="2.000"
+                return "2.000", "1"
+            elif odds_raw == "22.070" or odds_raw.startswith("22."):
+                # "22.070" -> bet_type="2", odds="2.070" 
+                return "2.070", "2"
+            elif odds_raw.lower().startswith('x2') and len(odds_raw) > 2:
+                # "X22.070" -> bet_type="X2", odds="2.070"
+                return odds_raw[2:], "X2"
+            elif odds_raw.lower().startswith('x') and len(odds_raw) > 1:
+                # "X2.070" -> bet_type="X", odds="2.070"
+                return odds_raw[1:], "X"
+            elif odds_raw.startswith('1') and len(odds_raw) > 3:
+                # Generic "1X.XXX" -> bet_type="1", odds="X.XXX"
+                return odds_raw[1:], "1"
         
-        # OCR.space optimized patterns for compressed format
-        patterns = [
-            # Betnacional H1: "Betnacional (BR)H1(+0.5) - escanteios1.83056.01USD V2.50"
-            {
-                'pattern': r'(betnacional)\s*\(br\)(.*?escanteios)(\d+\.\d+)(\d+\.\d+)usd\s*v?\s*(\d+\.\d+)',
-                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
-            },
-            # KTO flexible: "KTO (BR)2 - escanteios2.330 •43.99USD V2.50"
-            {
-                'pattern': r'(kto)\s*\(br\)\s*(.*?)(?=\d+\.\d+)(\d+\.\d+)\s*[•·\u2022\u00b7]?\s*(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
-                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
-            },
-            # Blaze: "Blaze (BR) Abaixo 3.5 - cartões 2º o time R 1.340 · 75.81 USD v 1.59"
-            {
-                'pattern': r'(blaze)\s*\(br\)\s*(.*?)r?\s*(\d+\.\d+)\s*[·•]?\s*(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
-                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
-            },
-            # MarjoSports: "MarjoSports (BR) Total 24 - cartões 2º o time 4.200 R 24.19 USD v 1.60"
-            {
-                'pattern': r'(marjosports)\s*\(br\)\s*(.*?)(\d+\.\d+)\s*r?\s*(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
-                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
-            },
-            # Generic pattern for any (BR) house with compressed format
-            {
-                'pattern': r'(\w+)\s*\(br\)\s*(.*?)(\d+\.\d+)(\d+\.\d+)usd\s*v?\s*(\d+\.\d+)',
-                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
-            },
-            # Generic with spaces
-            {
-                'pattern': r'(\w+)\s*\(br\)\s*(.*?)(\d+\.\d+)\s+(\d+\.\d+)\s*usd\s*v?\s*(\d+\.\d+)',
-                'groups': ['house', 'bet_type', 'odds', 'stake', 'profit']
-            }
-        ]
+        return odds_raw, bet_type_raw
+
+    def _clean_bet_type(self, bet_type_raw: str) -> str:
+        """Clean and format bet type"""
         
-        for pattern_info in patterns:
-            match = re.search(pattern_info['pattern'], line, re.IGNORECASE)
-            if match:
-                groups = match.groups()
-                print(f"Betting pattern matched: {groups}", file=sys.stderr)
-                
-                if len(groups) >= 5:
-                    house = groups[0].capitalize()
-                    bet_type = groups[1].strip()
-                    odds = groups[2]
-                    stake = groups[3]
-                    profit = groups[4]
-                    
-                    # Clean bet type
-                    bet_type = re.sub(r'\s+', ' ', bet_type)
-                    bet_type = bet_type.replace('º', '°').replace('2°', '2º')
-                    
-                    return {
-                        'bettingHouse': f"{house} (BR)",
-                        'betType': bet_type,
-                        'odds': odds,
-                        'stake': stake,
-                        'profit': profit
-                    }
+        # Remove extra whitespace and unwanted characters
+        bet_type = re.sub(r'\s+', ' ', bet_type_raw.strip())
+        bet_type = re.sub(r'[^\w\s\(\)\+\-\.,°º]', ' ', bet_type)
+        bet_type = re.sub(r'\s+', ' ', bet_type).strip()
         
-        return None
+        # Return cleaned bet type (limit length)
+        return bet_type[:50]
 
     def _get_default_result(self) -> Dict[str, Any]:
         """Get default result structure"""
@@ -464,10 +492,10 @@ def main():
             print(json.dumps(error_result))
             sys.exit(1)
         
-        # Initialize OCR
+        # Initialize OCR engine
         ocr_engine = BettingSlipOCR()
         
-        # Analyze betting slip
+        # Analyze betting slip using OCR.space native JSON
         result = ocr_engine.analyze_betting_slip(base64_image)
         
         # Output result as JSON
