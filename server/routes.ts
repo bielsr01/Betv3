@@ -120,7 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : imageBase64;
 
       const payload = {
-        model: "llama-3.1-sonar-small-128k-online",
+        model: "sonar-pro",
         messages: [
           {
             role: "user",
