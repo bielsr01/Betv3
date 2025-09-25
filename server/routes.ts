@@ -120,7 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : imageBase64;
 
       const payload = {
-        model: "gpt-4o",
+        model: "sonar-pro",
         messages: [
           {
             role: "user",
