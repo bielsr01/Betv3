@@ -117,16 +117,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           child.on('close', (code) => {
             clearTimeout(timeout);
-            if (code === 0) {
-              try {
+            
+            // PRIORITIZE STDOUT PARSING OVER EXIT CODE
+            // Python script outputs valid JSON to stdout even when dependencies have warnings
+            try {
+              if (stdout.trim()) {
                 const result = JSON.parse(stdout.trim());
+                // If we got valid JSON, that's success regardless of exit code
+                console.log(`📊 Got valid JSON from DocTR (exit code ${code})`);
                 resolve(result);
-              } catch (e: any) {
-                reject(new Error(`Failed to parse DocTR AI output: ${e.message}. Output: ${stdout.substring(0, 200)}`));
+                return;
               }
-            } else {
-              reject(new Error(`DocTR AI failed with code ${code}: ${stderr}`));
+            } catch (parseError) {
+              console.log(`❌ JSON parse failed: ${parseError}. Stdout: ${stdout.substring(0, 100)}`);
             }
+            
+            // Only reject if no valid JSON was found AND exit code indicates failure
+            reject(new Error(`DocTR AI failed - no valid output. Code: ${code}, Stderr: ${stderr.substring(0, 300)}`));
           });
           
           child.on('error', (err: any) => {
@@ -134,8 +141,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             reject(err);
           });
           
-          // Send base64 data via stdin
-          child.stdin.write(imageBase64);
+          // Send JSON data to Python script
+          child.stdin.write(JSON.stringify({ imageBase64 }));
           child.stdin.end();
         });
 

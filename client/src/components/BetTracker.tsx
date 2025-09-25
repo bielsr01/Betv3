@@ -8,15 +8,15 @@ import Dashboard from './Dashboard';
 import BetManagement from './BetManagement';
 import Reports from './Reports';
 import { ThemeToggle } from './ThemeToggle';
-// Using Tesseract OCR for real text recognition from images
+// Using DocTR db_mobilenet_v3_large AI OCR for real text recognition from images
 import { apiRequest } from '@/lib/queryClient';
 
 type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports';
 
-// OCR function using Tesseract OCR
+// OCR function using DocTR db_mobilenet_v3_large AI OCR
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
   try {
-    console.log('Starting Tesseract OCR processing...');
+    console.log('Starting DocTR db_mobilenet_v3_large OCR processing...');
     
     // Convert and compress image for optimal OCR processing
     const base64 = await new Promise<string>((resolve) => {
@@ -48,7 +48,7 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
       reader.readAsDataURL(file);
     });
     
-    // Call backend API for Tesseract OCR analysis
+    // Call backend API for DocTR db_mobilenet_v3_large OCR analysis
     const response = await fetch('/api/ocr/analyze', {
       method: 'POST',
       headers: {
@@ -58,17 +58,17 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
     });
     
     if (!response.ok) {
-      throw new Error('Failed to analyze image with Tesseract OCR');
+      throw new Error('Failed to analyze image with DocTR db_mobilenet_v3_large OCR');
     }
     
     const ocrData = await response.json();
-    console.log('Tesseract OCR result:', ocrData);
+    console.log('DocTR db_mobilenet_v3_large OCR result:', ocrData);
     
     // Convert OCR response to our OCRData format
     return convertOCRToFormat(ocrData);
     
   } catch (error) {
-    console.error('Tesseract OCR processing failed:', error);
+    console.error('DocTR db_mobilenet_v3_large OCR processing failed:', error);
     throw new Error('Falha ao processar imagem. Tente novamente.');
   }
 };
@@ -394,7 +394,7 @@ export default function BetTracker() {
     setCurrentImageUrl(imageUrl);
     
     try {
-      // Real OCR processing using Tesseract.js
+      // Real OCR processing using DocTR db_mobilenet_v3_large
       const ocrData = await processOCRFromImage(file);
       setCurrentOCRData(ocrData);
       setCurrentState('verification');
