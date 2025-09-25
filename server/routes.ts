@@ -153,17 +153,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 // Get position of the betting house in the text
                 const casaPos = texto.indexOf(casa);
                 
-                // Extract ALL numbers from the line
-                const numerosRegex = /(\d+\.?\d*)/g;
+                // DIRECT PATTERN SEARCH - Find specific SureBet patterns in the original text
                 const numerosMatch = [];
-                let match;
-                while ((match = numerosRegex.exec(texto)) !== null) {
+                
+                // Search for specific SureBet odds patterns (3-digit decimals like 1.830, 2.280)
+                const sureBetOddsRegex = /\b(\d\.\d{3})\b/g; // Matches X.XXX format with word boundaries
+                let sureBetMatch;
+                while ((sureBetMatch = sureBetOddsRegex.exec(texto)) !== null) {
                   numerosMatch.push({
-                    value: parseFloat(match[1]),
-                    position: match.index,
-                    text: match[1]
+                    value: parseFloat(sureBetMatch[1]),
+                    position: sureBetMatch.index,
+                    text: sureBetMatch[1],
+                    type: 'surebet_odds'
                   });
+                  console.log(`Found SureBet odds pattern: ${sureBetMatch[1]} at position ${sureBetMatch.index}`);
                 }
+                
+                // Search for stake amounts (typically 2-digit decimals like 55.47, 44.53)
+                const stakeRegex = /\b(\d{2,3}\.\d{2})\b/g; // Matches XX.XX or XXX.XX format with word boundaries  
+                let stakeMatch;
+                while ((stakeMatch = stakeRegex.exec(texto)) !== null) {
+                  const value = parseFloat(stakeMatch[1]);
+                  // Only stakes in reasonable range (10-1000)
+                  if (value >= 10 && value <= 1000) {
+                    numerosMatch.push({
+                      value: value,
+                      position: stakeMatch.index,
+                      text: stakeMatch[1],
+                      type: 'stake'
+                    });
+                    console.log(`Found stake pattern: ${stakeMatch[1]} at position ${stakeMatch.index}`);
+                  }
+                }
+                
+                // Search for two-part stakes (like "44 53" that should be "44.53")  
+                const twoPartStakeRegex = /\b(\d{2})\s+(\d{2})\b/g;
+                let twoPartMatch;
+                while ((twoPartMatch = twoPartStakeRegex.exec(texto)) !== null) {
+                  const combined = `${twoPartMatch[1]}.${twoPartMatch[2]}`;
+                  const value = parseFloat(combined);
+                  if (value >= 10 && value <= 1000) {
+                    numerosMatch.push({
+                      value: value,
+                      position: twoPartMatch.index,
+                      text: combined,
+                      type: 'combined_stake'
+                    });
+                    console.log(`Found combined stake: ${combined} from "${twoPartMatch[1]} ${twoPartMatch[2]}"`);
+                  }
+                }
+                
+                // NO GENERIC FALLBACK - only use typed pattern matches to prevent overwriting
                 
                 console.log(`Numbers found with positions:`, numerosMatch);
                 
@@ -177,56 +217,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 if (!betA.bettingHouse) {
                   betA.bettingHouse = casa;
                   
-                  // For BetA: Look for odds patterns - typically between 1.0 and 10.0
-                  const possibleOdds = numerosAposCasa.filter(num => 
-                    num.value >= 1.0 && num.value <= 10.0 && num.text.includes('.')
-                  );
+                  // Priority 1: Look for SureBet-specific odds patterns (X.XXX format)
+                  const sureBetOdds = numerosAposCasa.filter(num => 
+                    num.type === 'surebet_odds' && num.value >= 1.0 && num.value <= 10.0
+                  ).sort((a, b) => a.position - b.position);
                   
-                  if (possibleOdds.length > 0) {
-                    // Take the first reasonable odds after the house name
-                    betA.odds = possibleOdds[0].text;
-                    console.log(`BetA odds set to: ${betA.odds}`);
+                  if (sureBetOdds.length > 0) {
+                    betA.odds = sureBetOdds[0].text;
+                    console.log(`BetA odds (SureBet pattern): ${betA.odds}`);
                   }
                   
-                  // For stakes: look for larger numbers (typically 10-100)
-                  const possibleStakes = numerosAposCasa.filter(num => 
+                  // Priority 2: Look for stake patterns (XX.XX format or combined)
+                  const stakeNumbers = numerosAposCasa.filter(num => 
+                    (num.type === 'stake' || num.type === 'combined_stake') && 
                     num.value >= 10 && num.value <= 1000
-                  );
+                  ).sort((a, b) => a.position - b.position);
                   
-                  if (possibleStakes.length > 0) {
-                    betA.stake = possibleStakes[0].text;
-                    console.log(`BetA stake set to: ${betA.stake}`);
+                  if (stakeNumbers.length > 0) {
+                    betA.stake = stakeNumbers[0].text;
+                    console.log(`BetA stake (pattern match): ${betA.stake}`);
                   }
                   
                 } else if (!betB.bettingHouse) {
                   betB.bettingHouse = casa;
                   
-                  // For BetB: Look for odds patterns
-                  const possibleOdds = numerosAposCasa.filter(num => 
-                    num.value >= 1.0 && num.value <= 10.0 && num.text.includes('.')
-                  );
+                  // Priority 1: Look for SureBet odds patterns, different from BetA
+                  const sureBetOdds = numerosAposCasa.filter(num => 
+                    num.type === 'surebet_odds' && 
+                    num.value >= 1.0 && num.value <= 10.0 &&
+                    num.text !== betA.odds // Different from BetA
+                  ).sort((a, b) => a.position - b.position);
                   
-                  if (possibleOdds.length > 0) {
-                    // If betA already took first odds, take second
-                    const oddsIndex = possibleOdds.findIndex(odds => odds.text !== betA.odds);
-                    if (oddsIndex >= 0) {
-                      betB.odds = possibleOdds[oddsIndex].text;
-                    } else if (possibleOdds.length > 1) {
-                      betB.odds = possibleOdds[1].text;
-                    } else {
-                      betB.odds = possibleOdds[0].text;
-                    }
-                    console.log(`BetB odds set to: ${betB.odds}`);
+                  if (sureBetOdds.length > 0) {
+                    betB.odds = sureBetOdds[0].text;
+                    console.log(`BetB odds (SureBet pattern): ${betB.odds}`);
                   }
                   
-                  // For stakes: look for larger numbers, but different from betA
-                  const possibleStakes = numerosAposCasa.filter(num => 
-                    num.value >= 10 && num.value <= 1000 && num.text !== betA.stake
-                  );
+                  // Priority 2: Look for stakes, different from BetA
+                  const stakeNumbers = numerosAposCasa.filter(num => 
+                    (num.type === 'stake' || num.type === 'combined_stake') && 
+                    num.value >= 10 && num.value <= 1000 &&
+                    num.text !== betA.stake // Different from BetA
+                  ).sort((a, b) => a.position - b.position);
                   
-                  if (possibleStakes.length > 0) {
-                    betB.stake = possibleStakes[0].text;
-                    console.log(`BetB stake set to: ${betB.stake}`);
+                  if (stakeNumbers.length > 0) {
+                    betB.stake = stakeNumbers[0].text;
+                    console.log(`BetB stake (pattern match): ${betB.stake}`);
                   }
                 }
               }
