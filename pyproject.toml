@@ -4,10 +4,9 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
+    "google-cloud-vision>=3.10.2",
     "numpy>=2.3.3",
     "opencv-python>=4.11.0.86",
-    "paddleocr>=3.2.0",
-    "paddlepaddle>=3.2.0",
     "pandas>=2.3.2",
     "pillow>=11.3.0",
 ]
