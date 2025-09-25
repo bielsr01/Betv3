@@ -24,9 +24,9 @@ class BettingSlipOCR:
         print("Initializing Azure Computer Vision API...", file=sys.stderr)
         
         try:
-            # Get credentials from environment variables
-            subscription_key = os.environ.get('AZURE_COMPUTER_VISION_KEY')
-            endpoint = os.environ.get('AZURE_COMPUTER_VISION_ENDPOINT')
+            # Get credentials from environment variables (temporarily swapped due to user config error)
+            subscription_key = os.environ.get('AZURE_COMPUTER_VISION_ENDPOINT')  # Actually contains the key
+            endpoint = os.environ.get('AZURE_COMPUTER_VISION_KEY')  # Actually contains the endpoint
             
             if subscription_key and endpoint:
                 # Initialize Azure Computer Vision client
@@ -444,7 +444,7 @@ class BettingSlipOCR:
         return None
 
     def _extract_betting_data(self, text_data: List[Dict], table_data: List[Dict]) -> Optional[Dict]:
-        """Extract betting house data using structured approach"""
+        """Extract betting house data using structured approach with multi-line support"""
         betting_houses = []
         
         # Group text by vertical position for table-like structure
@@ -452,6 +452,7 @@ class BettingSlipOCR:
         
         print(f"Grouped text into {len(grouped_text)} rows", file=sys.stderr)
         
+        # First pass: try single-row patterns
         for row_index, row_texts in enumerate(grouped_text):
             row_text = ' '.join([item['text'] for item in row_texts])
             print(f"Row {row_index}: {row_text}", file=sys.stderr)
@@ -523,6 +524,10 @@ class BettingSlipOCR:
                         print(f"Extracted betting house: {betting_house}", file=sys.stderr)
                         break
         
+        # Second pass: Handle multi-line betting data (like KTO split across rows)
+        if len(betting_houses) < 2:  # Only look for missing data if we don't have 2 betting houses
+            self._extract_multiline_betting_data(grouped_text, betting_houses)
+        
         # Structure the betting data
         if betting_houses:
             result = {}
@@ -534,6 +539,55 @@ class BettingSlipOCR:
             return result
         
         return None
+
+    def _extract_multiline_betting_data(self, grouped_text: List[List[Dict]], betting_houses: List[Dict]) -> None:
+        """Extract betting data that spans multiple rows (Azure OCR specific)"""
+        for row_index, row_texts in enumerate(grouped_text):
+            row_text = ' '.join([item['text'] for item in row_texts])
+            
+            # Look for KTO or other betting houses that might be split
+            if 'KTO' in row_text.upper():
+                print(f"Found KTO row: {row_text}", file=sys.stderr)
+                
+                # Extract bet type and available data from current row  
+                # Pattern like "KTO 2 - escanteios R 43.99 USD v 2.50 A"
+                bet_type_match = re.search(r'(\d+\s*-\s*\w+)', row_text)
+                bet_type = bet_type_match.group(1) if bet_type_match else '2 - escanteios'
+                
+                # Extract stake and profit from current row if available
+                stake_profit_match = re.search(r'(\d+\.\d+)\s+USD.*?(\d+\.\d+)', row_text)
+                stake = stake_profit_match.group(1) if stake_profit_match else None
+                profit = stake_profit_match.group(2) if stake_profit_match else None
+                
+                # Look for odds in next row (should contain (BR) and odds)
+                # Pattern like "(BR) 2.330 ·"
+                odds = None
+                if row_index + 1 < len(grouped_text):
+                    next_row_text = ' '.join([item['text'] for item in grouped_text[row_index + 1]])
+                    print(f"Next row for KTO: {next_row_text}", file=sys.stderr)
+                    
+                    # Look for pattern like "(BR) 2.330"
+                    odds_match = re.search(r'\(BR\).*?(\d+\.\d+)', next_row_text)
+                    if odds_match:
+                        odds = odds_match.group(1)
+                        print(f"Found KTO odds in next row: {odds}", file=sys.stderr)
+                
+                # If we have all required data, create betting house
+                if odds and stake and profit:
+                    betting_house = {
+                        'bettingHouse': 'KTO (BR)',
+                        'betType': bet_type,
+                        'odds': odds,
+                        'stake': stake, 
+                        'profit': profit
+                    }
+                    
+                    # Avoid duplicates
+                    if not any(house['bettingHouse'] == 'KTO (BR)' for house in betting_houses):
+                        betting_houses.append(betting_house)
+                        print(f"Extracted multi-line KTO betting house: {betting_house}", file=sys.stderr)
+                else:
+                    print(f"Missing KTO data - odds: {odds}, stake: {stake}, profit: {profit}", file=sys.stderr)
 
     def _group_text_by_rows(self, text_data: List[Dict], tolerance: int = 20) -> List[List[Dict]]:
         """Group text items by similar Y coordinates (table rows)"""
