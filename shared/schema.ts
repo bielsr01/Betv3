@@ -30,6 +30,7 @@ export const bets = pgTable("bets", {
   teamA: text("team_a").notNull(), // First team
   teamB: text("team_b").notNull(), // Second team
   betType: text("bet_type").notNull(),
+  selectedSide: text("selected_side").notNull(), // The side/outcome being bet on (e.g., "Team A", "Over 2.5", etc.)
   bettingHouse: text("betting_house").notNull(), // Betting house name (temporary - matches current DB)
   odds: decimal("odds", { precision: 10, scale: 2 }).notNull(),
   stake: decimal("stake", { precision: 10, scale: 2 }).notNull(),

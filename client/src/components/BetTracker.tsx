@@ -422,6 +422,7 @@ export default function BetTracker() {
         teamA: data.betA.teamA,
         teamB: data.betA.teamB,
         betType: data.betA.betType,
+        selectedSide: data.betA.betType, // Use bet type as selected side for now
         odds: data.betA.odds,
         stake: data.betA.stake,
         payout: (Number(data.betA.stake) * Number(data.betA.odds)).toFixed(2),
@@ -443,6 +444,7 @@ export default function BetTracker() {
         teamA: data.betB.teamA,
         teamB: data.betB.teamB,
         betType: data.betB.betType,
+        selectedSide: data.betB.betType, // Use bet type as selected side for now
         odds: data.betB.odds,
         stake: data.betB.stake,
         payout: (Number(data.betB.stake) * Number(data.betB.odds)).toFixed(2),

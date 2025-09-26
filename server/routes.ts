@@ -40,7 +40,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bets", async (req, res) => {
     try {
-      const betData: InsertBet = req.body;
+      // Force selectedSide to have a value if missing
+      const betData: InsertBet = {
+        ...req.body,
+        selectedSide: req.body.selectedSide || req.body.betType || 'Unknown'
+      };
       const bet = await storage.createBet(betData);
       res.status(201).json(bet);
     } catch (error) {

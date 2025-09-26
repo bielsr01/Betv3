@@ -54,9 +54,46 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBet(insertBet: InsertBet): Promise<Bet> {
+    // PostgreSQL expects YYYY-MM-DD format, convert from DD-MM-YYYY or DD/MM/YYYY
+    let formattedGameDate: string;
+    const gameDate = insertBet.gameDate;
+    
+    if (typeof gameDate === 'string') {
+      let dateStr = gameDate;
+      
+      // Convert DD/MM/YYYY to DD-MM-YYYY first
+      if (dateStr.includes('/')) {
+        dateStr = dateStr.replace(/\//g, '-');
+      }
+      
+      // Now convert DD-MM-YYYY to YYYY-MM-DD for PostgreSQL
+      if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        const [day, month, year] = dateStr.split('-');
+        formattedGameDate = `${year}-${month}-${day}`;
+      } else {
+        formattedGameDate = dateStr; // Already in correct format or fallback
+      }
+    } else {
+      // Fallback to current date in YYYY-MM-DD format
+      const now = new Date();
+      const year = now.getUTCFullYear().toString();
+      const month = (now.getUTCMonth() + 1).toString().padStart(2, '0');
+      const day = now.getUTCDate().toString().padStart(2, '0');
+      formattedGameDate = `${year}-${month}-${day}`;
+    }
+
+    const betData = {
+      ...insertBet,
+      gameDate: formattedGameDate
+    };
+
+    console.log('Converting date for PostgreSQL:', gameDate, '→', formattedGameDate);
+    console.log('Full betData being inserted:', JSON.stringify(betData, null, 2));
+    console.log('Original insertBet.selectedSide:', insertBet.selectedSide);
+    
     const [bet] = await db
       .insert(bets)
-      .values(insertBet)
+      .values(betData)
       .returning();
     return bet;
   }
@@ -124,22 +161,29 @@ export class MemStorage implements IStorage {
     let formattedGameDate: string;
     const gameDate = insertBet.gameDate;
     
-    // Since InsertBet.gameDate is typed as string, treat it as string only
+    // PostgreSQL expects YYYY-MM-DD format, convert from DD-MM-YYYY or DD/MM/YYYY
     if (typeof gameDate === 'string') {
-      // Ensure proper DD-MM-YYYY format
-      if (gameDate.includes('/')) {
-        // Convert DD/MM/YYYY to DD-MM-YYYY
-        formattedGameDate = gameDate.replace(/\//g, '-');
+      let dateStr = gameDate;
+      
+      // Convert DD/MM/YYYY to DD-MM-YYYY first
+      if (dateStr.includes('/')) {
+        dateStr = dateStr.replace(/\//g, '-');
+      }
+      
+      // Now convert DD-MM-YYYY to YYYY-MM-DD for PostgreSQL
+      if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        const [day, month, year] = dateStr.split('-');
+        formattedGameDate = `${year}-${month}-${day}`;
       } else {
-        formattedGameDate = gameDate;
+        formattedGameDate = dateStr; // Already in correct format or fallback
       }
     } else {
-      // Fallback to current date in DD-MM-YYYY format
+      // Fallback to current date in YYYY-MM-DD format
       const now = new Date();
-      const day = now.getUTCDate().toString().padStart(2, '0');
-      const month = (now.getUTCMonth() + 1).toString().padStart(2, '0');
       const year = now.getUTCFullYear().toString();
-      formattedGameDate = `${day}-${month}-${year}`;
+      const month = (now.getUTCMonth() + 1).toString().padStart(2, '0');
+      const day = now.getUTCDate().toString().padStart(2, '0');
+      formattedGameDate = `${year}-${month}-${day}`;
     }
     
     const bet: Bet = { 
