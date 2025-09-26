@@ -118,7 +118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           content: [
             {
               type: "text",
-              text: "Extract ALL visible text from this image. Focus on numbers, names, odds, dates, and any betting information. Be comprehensive and fast."
+              text: "Extract ALL visible text from this betting slip image. Pay SPECIAL ATTENTION to:\n\n1. DATES & TIMES: Look for dates in ANY format (DD-MM-YYYY, YYYY-MM-DD, DD/MM/YYYY) and times (HH:MM, including timezone like -03:00)\n2. Team names and match information\n3. Odds (decimal numbers like 1.970, 2.120)\n4. Stakes/values (numbers with currency)\n5. Betting houses/bookmakers\n6. Sport and league information\n\nScan the ENTIRE image including top headers, timestamps, event information. Be comprehensive and extract EVERYTHING visible."
             },
             {
               type: "image",
@@ -211,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 }
 
-Focus on: team names, odds (decimal format), stakes, betting houses, dates (DD-MM-YYYY), times (HH:MM), sports, leagues. If info is missing, use reasonable defaults.`
+IMPORTANT - SCAN FOR DATE/TIME INFORMATION:\n- Look in headers, top of screen, event information\n- Extract dates from formats like \"2025-09-26\" and convert to DD-MM-YYYY\n- Extract times from formats like \"07:00\" or \"07:00 -03:00\"\n- Search for words like \"Evento\", \"Event\", \"aproximadamente\", \"horas\"\n\nFocus on: team names, odds (decimal format), stakes, betting houses, dates (DD-MM-YYYY), times (HH:MM), sports, leagues. CRITICAL: Always extract date/time from anywhere in the image.`
             },
             {
               type: "image", 
