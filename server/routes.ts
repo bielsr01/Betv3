@@ -112,13 +112,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const response = await anthropic.messages.create({
         model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
-        max_tokens: 500,
+        max_tokens: 400,  // Reduzido para velocidade
         messages: [{
           role: "user",
           content: [
             {
               type: "text",
-              text: "Extract ALL visible text from this betting slip image. Pay SPECIAL ATTENTION to:\n\n1. DATES & TIMES: Look for dates in ANY format (DD-MM-YYYY, YYYY-MM-DD, DD/MM/YYYY) and times (HH:MM, including timezone like -03:00)\n2. Team names and match information\n3. Odds (decimal numbers like 1.970, 2.120)\n4. Stakes/values (numbers with currency)\n5. Betting houses/bookmakers\n6. Sport and league information\n\nScan the ENTIRE image including top headers, timestamps, event information. Be comprehensive and extract EVERYTHING visible."
+              text: "Extract betting data and organize in this EXACT format:\n\nDATA E HORA\n[date] [time]\n\nESPORTE\n[sport name]\n\nLIGA\n[league name]\n\nNOMES DOS TIMES\nTime A: [team A]\nTime B: [team B]\n\nAPOSTA 1\n[betting house 1]\nOdd: [odds1]\nStake: [stake1]\nLucro da operação: [profit1]\n\nAPOSTA 2\n[betting house 2]\nOdd: [odds2]\nStake: [stake2]\nLucro da operação: [profit2]\n\nLUCRO EM PORCENTAGEM\n[total profit %]\n\nBe fast and precise."
             },
             {
               type: "image",
@@ -181,7 +181,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const response = await anthropic.messages.create({
         model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
-        max_tokens: 800,
+        max_tokens: 600,  // Reduzido para velocidade
         messages: [{
           role: "user",
           content: [
