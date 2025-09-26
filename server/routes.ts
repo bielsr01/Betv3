@@ -80,7 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Raw endpoint - returns raw text using Claude Haiku
+  // OCR Raw endpoint - usa função compartilhada + formatação para texto
   app.post('/api/ocr/raw', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -94,109 +94,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: 'Anthropic API key not configured' });
       }
 
-      // Clean base64 data
-      const cleanBase64 = imageBase64.includes('base64,') 
-        ? imageBase64.split('base64,')[1] 
-        : imageBase64;
-
-      // Determine image media type using helper function
-      const originalMediaType = detectImageMediaType(imageBase64);
-      
-      // Apply ultra-fast compression to reduce tokens dramatically
-      const { compressedBase64, newMediaType } = await compressImageForClaude(cleanBase64, originalMediaType);
-
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({
         apiKey: ANTHROPIC_API_KEY,
       });
 
-      console.log('🚀 Sending to Claude Haiku...');
-      const startTime = Date.now();
-
-      const response = await anthropic.messages.create({
-        model: "claude-3-haiku-20240307", // Conforme seu JSON
-        max_tokens: 800,  // Conforme seu JSON
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Extraia os dados desta imagem de surebet preservando TODOS os caracteres especiais, acentos e símbolos:
-
-1. DATA E HORA: Do cabeçalho azul entre parênteses (AAAA-MM-DD HH:MM -03:00) extraia data DD/MM/AAAA e hora HH:MM
-
-2. TIMES: Procure o traço longo (–). Antes = Time A, Após = Time B. Preserve acentos (ã, ç, á, é, etc)
-
-3. APOSTAS: Para cada linha:
-   - Casa: Nome completo preservando (BR) e acentos
-   - Tipo: Copie EXATAMENTE da coluna 'Chance' incluindo:
-     * Símbolos: ≥ ≤ > < = ± ÷ × 
-     * Ordinais: 1º 2º 3º com º
-     * Elevados: ² ³ ⁴ etc
-     * Acentos: ã ç á é í ó ú
-     * Todos outros símbolos especiais
-   - Odd: Número com ponto decimal
-   - Valor da Aposta: Número USD
-   - Lucro: Número da última coluna
-
-4. LUCRO%: Porcentagem do canto direito
-
-IMPORTANTE: Mantenha caracteres especiais EXATAMENTE como aparecem na imagem.
-
-Formato:
-
-Data do evento: DD/MM/AAAA
-Hora: HH:MM
-
-Time A: [time com acentos]
-Time B: [time com acentos]
-
-Aposta 1
-Casa: [casa completa]
-Tipo: [chance com símbolos]
-Odd: [odd]
-Valor da Aposta: [valor]
-Lucro: [lucro]
-
-Aposta 2
-Casa: [casa completa]
-Tipo: [chance com símbolos]
-Odd: [odd]
-Valor da Aposta: [valor]
-Lucro: [lucro]
-
-Lucro%: [porcentagem]`
-            },
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: newMediaType,
-                data: compressedBase64
-              }
-            }
-          ]
-        }]
-      });
-
-      const endTime = Date.now();
-      console.log(`⚡ Claude processed in ${endTime - startTime}ms`);
-
-      // Com o prompt perfeito do usuário, Claude retorna diretamente no formato correto
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      // USA A MESMA FUNÇÃO CONFIÁVEL DO /api/ocr/analyze
+      const jsonData = await extractSurebetData(imageBase64, anthropic);
       
-      // Return formatted text as plain text - sem parsing JSON, formato direto
+      // Formatar JSON em texto no formato solicitado pelo usuário
+      const formatToText = (data: any) => {
+        const lines = [
+          `Data do evento: ${data.gameDate || ''}`,
+          `Hora: ${data.gameTime || ''}`,
+          '',
+          `Esporte: ${data.sport || ''}`,
+          `Liga: ${data.league || ''}`,
+          '',
+          `Time A: ${data.teamA || ''}`,
+          `Time B: ${data.teamB || ''}`,
+          '',
+          `Aposta 1`,
+          `Casa: ${data.betA?.bettingHouse || ''}`,
+          `Tipo: ${data.betA?.betType || ''}`,
+          `Odd: ${data.betA?.odds || ''}`,
+          `Valor da Aposta: ${data.betA?.stake || ''}`,
+          `Lucro: ${data.betA?.profit || ''}`,
+          '',
+          `Aposta 2`,
+          `Casa: ${data.betB?.bettingHouse || ''}`,
+          `Tipo: ${data.betB?.betType || ''}`,
+          `Odd: ${data.betB?.odds || ''}`,
+          `Valor da Aposta: ${data.betB?.stake || ''}`,
+          `Lucro: ${data.betB?.profit || ''}`,
+          '',
+          `Lucro%: ${data.totalProfitPercentage || ''}`
+        ];
+        return lines.join('\n');
+      };
+
+      const formattedText = formatToText(jsonData);
+      
+      console.log('✅ /api/ocr/raw: Successfully formatted shared extraction data');
       res.set('Content-Type', 'text/plain; charset=utf-8');
-      res.send(responseText.trim());
+      res.send(formattedText);
       
     } catch (error) {
-      console.error('Claude OCR error:', error);
-      res.status(500).json({ error: 'Failed to get Claude OCR result' });
+      console.error('Raw OCR error:', error);
+      if (error instanceof Error && error.message.includes('No JSON found')) {
+        return res.status(502).json({ 
+          error: 'Claude did not return valid JSON', 
+          details: error.message 
+        });
+      }
+      res.status(500).json({ error: 'Failed to extract surebet data' });
     }
   });
 
 
-  // OCR Analysis endpoint - structured data extraction using Claude Haiku
+  // OCR Analysis endpoint - usa função compartilhada para JSON
   app.post('/api/ocr/analyze', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -210,115 +166,25 @@ Lucro%: [porcentagem]`
         return res.status(500).json({ error: 'Anthropic API key not configured' });
       }
 
-      // Clean base64 data
-      const cleanBase64 = imageBase64.includes('base64,') 
-        ? imageBase64.split('base64,')[1] 
-        : imageBase64;
-
-      // Determine image media type using helper function
-      const originalMediaType = detectImageMediaType(imageBase64);
-      
-      // Apply ultra-fast compression to reduce tokens dramatically
-      const { compressedBase64, newMediaType } = await compressImageForClaude(cleanBase64, originalMediaType);
-
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({
         apiKey: ANTHROPIC_API_KEY,
       });
 
-      console.log('🚀 Analyzing betting slip with Claude Haiku...');
-      const startTime = Date.now();
-
-      const response = await anthropic.messages.create({
-        model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
-        max_tokens: 400,  // Reduzido para economia
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Extrair dados EXATOS da imagem e retornar JSON:
-{
-  "betA": {
-    "bettingHouse": "[nome da casa]",
-    "teamA": "[time 1]", 
-    "teamB": "[time 2]",
-    "betType": "[COPIAR EXATO texto coluna tipo/chance: exemplo 'Acima 7.5 1º período 2º time' com símbolos/acentos]",
-    "odds": "[valor]",
-    "stake": "[valor]", 
-    "profit": "[lucro]",
-    "date": "[DD-MM-YYYY]",
-    "time": "[HH:MM]",
-    "sport": "[esporte]",
-    "league": "[liga]"
-  },
-  "betB": {
-    "bettingHouse": "[nome da casa]",
-    "teamA": "[time 1]",
-    "teamB": "[time 2]", 
-    "betType": "[COPIAR EXATO texto coluna tipo/chance: exemplo 'Acima 7.5 1º período 2º time' com símbolos/acentos]",
-    "odds": "[valor]",
-    "stake": "[valor]",
-    "profit": "[lucro]",
-    "date": "[DD-MM-YYYY]", 
-    "time": "[HH:MM]",
-    "sport": "[esporte]",
-    "league": "[liga]"
-  },
-  "totalProfitPercentage": "[percentual]"
-}`
-            },
-            {
-              type: "image", 
-              source: {
-                type: "base64",
-                media_type: newMediaType,
-                data: compressedBase64
-              }
-            }
-          ]
-        }]
-      });
-
-      const endTime = Date.now();
-      console.log(`⚡ Claude analyzed in ${endTime - startTime}ms`);
-
-      let result;
-      try {
-        const responseText = response.content[0].type === 'text' ? response.content[0].text : '{}';
-        // Extract JSON from Claude's response (might have additional text)
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        const jsonStr = jsonMatch ? jsonMatch[0] : '{}';
-        result = JSON.parse(jsonStr);
-      } catch (parseError) {
-        console.error('JSON parse error:', parseError);
-        result = {
-          betA: {
-            team: "Time A",
-            odds: 2.0,
-            stake: 100,
-            bettingHouse: "Casa de Apostas",
-            date: new Date().toLocaleDateString('pt-BR'),
-            time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            sport: "Futebol",
-            league: "Liga Principal"
-          },
-          betB: {
-            team: "Time B", 
-            odds: 2.1,
-            stake: 95,
-            bettingHouse: "Casa de Apostas",
-            date: new Date().toLocaleDateString('pt-BR'),
-            time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            sport: "Futebol",
-            league: "Liga Principal"
-          }
-        };
-      }
+      // USA A MESMA FUNÇÃO COMPARTILHADA
+      const result = await extractSurebetData(imageBase64, anthropic);
       
+      console.log('✅ /api/ocr/analyze: Successfully extracted data via shared function');
       res.json(result);
+      
     } catch (error) {
-      console.error('Claude analysis error:', error);
+      console.error('Analysis OCR error:', error);
+      if (error instanceof Error && error.message.includes('No JSON found')) {
+        return res.status(502).json({ 
+          error: 'Claude did not return valid JSON', 
+          details: error.message 
+        });
+      }
       res.status(500).json({ error: 'Failed to analyze image with Claude' });
     }
   });
@@ -393,4 +259,87 @@ function detectImageMediaType(imageBase64: string): "image/jpeg" | "image/png" |
   
   // Default fallback
   return 'image/jpeg';
+}
+
+// Função compartilhada para extração confiável de dados de surebet
+async function extractSurebetData(imageBase64: string, anthropic: any) {
+  // Clean base64 data
+  const cleanBase64 = imageBase64.includes('base64,') 
+    ? imageBase64.split('base64,')[1] 
+    : imageBase64;
+
+  // Determine image media type
+  const originalMediaType = detectImageMediaType(imageBase64);
+  
+  // Apply ultra-fast compression
+  const { compressedBase64, newMediaType } = await compressImageForClaude(cleanBase64, originalMediaType);
+
+  console.log('🚀 Extracting surebet data with Claude Haiku...');
+  const startTime = Date.now();
+
+  const response = await anthropic.messages.create({
+    model: "claude-3-haiku-20240307",
+    max_tokens: 800,
+    messages: [{
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: `Extraia dados desta imagem de surebet. Retorne APENAS JSON válido no formato abaixo, com dados REAIS da imagem:
+
+{
+  "gameDate": "DD/MM/AAAA da imagem",
+  "gameTime": "HH:MM da imagem", 
+  "sport": "esporte da imagem",
+  "league": "liga da imagem",
+  "teamA": "time A da imagem",
+  "teamB": "time B da imagem",
+  "betA": {
+    "bettingHouse": "casa de apostas real",
+    "betType": "tipo exato da coluna chance",
+    "odds": "odd real",
+    "stake": "valor real da aposta",
+    "profit": "lucro real"
+  },
+  "betB": {
+    "bettingHouse": "casa de apostas real",
+    "betType": "tipo exato da coluna chance", 
+    "odds": "odd real",
+    "stake": "valor real da aposta",
+    "profit": "lucro real"
+  },
+  "totalProfitPercentage": "porcentagem real"
+}
+
+CRÍTICO: Use dados REAIS da imagem fornecida, não valores de exemplo!`
+        },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: newMediaType,
+            data: compressedBase64
+          }
+        }
+      ]
+    }]
+  });
+
+  const endTime = Date.now();
+  console.log(`⚡ Claude processed in ${endTime - startTime}ms`);
+
+  // Extract and parse JSON
+  const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+  console.log('📥 Claude raw response:', responseText.substring(0, 200) + '...');
+  
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(`No JSON found in Claude response: ${responseText}`);
+  }
+  
+  const jsonStr = jsonMatch[0];
+  const jsonData = JSON.parse(jsonStr);
+  
+  console.log('✅ Successfully parsed surebet data:', JSON.stringify(jsonData, null, 2));
+  return jsonData;
 }
