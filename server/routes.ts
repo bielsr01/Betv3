@@ -206,15 +206,15 @@ async function compressImageForClaude(base64: string, originalMediaType: string)
     // Convert base64 to buffer for Sharp processing
     const inputBuffer = Buffer.from(base64, 'base64');
     
-    // Ultra-fast compression settings optimized for SPEED
+    // HIGH QUALITY compression settings for ACCURACY
     const compressedBuffer = await (await import('sharp')).default(inputBuffer)
       .resize({
-        width: 800,        // Max width for OCR (sufficient for text recognition)
-        withoutEnlargement: true  // Don't upscale small images
+        width: 1200,       // Higher resolution for better text recognition
+        withoutEnlargement: true
       })
       .webp({
-        quality: 75,       // Good balance: speed vs file size
-        effort: 1          // Lowest effort = fastest compression (0-6 scale)
+        quality: 90,       // Higher quality for better text clarity
+        effort: 3          // Balanced effort for quality vs speed
       })
       .toBuffer();
     
