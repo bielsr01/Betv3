@@ -110,9 +110,10 @@ export default function OCRVerification({
       
       // If gameDate is being updated, synchronize the formatted date fields
       if (field === 'gameDate' && value instanceof Date) {
-        const day = value.getDate().toString().padStart(2, '0');
-        const month = (value.getMonth() + 1).toString().padStart(2, '0');
-        const year = value.getFullYear().toString();
+        // CORRIGIDO: Usar UTC methods para evitar timezone offset
+        const day = value.getUTCDate().toString().padStart(2, '0');
+        const month = (value.getUTCMonth() + 1).toString().padStart(2, '0');
+        const year = value.getUTCFullYear().toString();
         
         updated.gameDateFormatted = `${day}-${month}-${year}`;
         
@@ -157,10 +158,11 @@ export default function OCRVerification({
       if (formData.gameDate instanceof Date) {
         return formData.gameDate;
       }
-      // If gameDate is a string (DD-MM-YYYY), convert to Date
+      // If gameDate is a string (DD-MM-YYYY), convert to Date with UTC to avoid timezone offset
       if (typeof formData.gameDate === 'string') {
         const [day, month, year] = formData.gameDate.split('-');
-        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        // CORRIGIDO: Usar UTC para evitar timezone offset de 1 dia
+        return new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day)));
       }
     }
     return undefined;
