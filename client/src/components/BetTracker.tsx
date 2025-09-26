@@ -9,15 +9,15 @@ import BetManagement from './BetManagement';
 import Reports from './Reports';
 import TestUpload from './TestUpload';
 import { ThemeToggle } from './ThemeToggle';
-// Removed Tesseract.js - now using Gemini Vision API
+// Using Claude AI for OCR processing
 import { apiRequest } from '@/lib/queryClient';
 
 type AppState = 'upload' | 'verification' | 'dashboard' | 'management' | 'reports' | 'test-upload';
 
-// OCR function using Gemini Vision API
+// OCR function using Claude AI - ONLY Claude, no fallbacks
 const processOCRFromImage = async (file: File): Promise<OCRData> => {
   try {
-    console.log('Starting Gemini Vision OCR processing...');
+    console.log('Starting Claude AI OCR processing...');
     
     // Convert file to base64
     const base64 = await new Promise<string>((resolve) => {
@@ -31,7 +31,7 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
       reader.readAsDataURL(file);
     });
     
-    // Call backend API for Gemini Vision analysis
+    // Call backend API for Claude AI analysis - NO FALLBACKS
     const response = await fetch('/api/ocr/analyze', {
       method: 'POST',
       headers: {
@@ -41,17 +41,17 @@ const processOCRFromImage = async (file: File): Promise<OCRData> => {
     });
     
     if (!response.ok) {
-      throw new Error('Failed to analyze image with Gemini Vision');
+      throw new Error('Failed to analyze image with Claude AI');
     }
     
-    const geminiData = await response.json();
-    console.log('Gemini Vision OCR result:', geminiData);
+    const claudeData = await response.json();
+    console.log('Claude AI OCR result:', claudeData);
     
-    // Convert Gemini response to our OCRData format
-    return convertGeminiToOCRFormat(geminiData);
+    // Convert Claude response to our OCRData format
+    return convertClaudeToOCRFormat(claudeData);
     
   } catch (error) {
-    console.error('Gemini Vision OCR processing failed:', error);
+    console.error('Claude AI OCR processing failed:', error);
     throw new Error('Falha ao processar imagem com IA. Tente novamente.');
   }
 };
@@ -291,44 +291,58 @@ const parseOCRText = (text: string): OCRData => {
   }
 };
 
-// Helper function to convert Gemini response to our format
-const convertGeminiToOCRFormat = (geminiData: any): OCRData => {
+// Helper function to convert Claude response to our format - NO FALLBACKS
+const convertClaudeToOCRFormat = (claudeData: any): OCRData => {
   // Calculate payouts: payout = stake × odds
-  const betAPayout = geminiData.betA.stake && geminiData.betA.odds ? 
-    (parseFloat(geminiData.betA.stake) * parseFloat(geminiData.betA.odds)).toFixed(2) : '0';
-  const betBPayout = geminiData.betB.stake && geminiData.betB.odds ? 
-    (parseFloat(geminiData.betB.stake) * parseFloat(geminiData.betB.odds)).toFixed(2) : '0';
+  const betAPayout = claudeData.betA.stake && claudeData.betA.odds ? 
+    (parseFloat(claudeData.betA.stake) * parseFloat(claudeData.betA.odds)).toFixed(2) : '0';
+  const betBPayout = claudeData.betB.stake && claudeData.betB.odds ? 
+    (parseFloat(claudeData.betB.stake) * parseFloat(claudeData.betB.odds)).toFixed(2) : '0';
 
   // Clean percentage value - remove % symbol if present
-  const cleanPercentage = (geminiData.totalProfitPercentage || '0').replace('%', '');
+  const cleanPercentage = (claudeData.totalProfitPercentage || '0').replace('%', '');
+
+  // Parse game date from DD/MM/YYYY format to Date object
+  const parsedDate = claudeData.gameDate ? 
+    (() => {
+      const parts = claudeData.gameDate.split('/');
+      if (parts.length === 3) {
+        // DD/MM/YYYY -> YYYY-MM-DD
+        const day = parts[0];
+        const month = parts[1]; 
+        const year = parts[2];
+        return new Date(`${year}-${month}-${day}`);
+      }
+      return new Date();
+    })() : new Date();
 
   return {
     betA: {
-      bettingHouse: geminiData.betA.bettingHouse || '',
-      teamA: geminiData.betA.teamA || '',
-      teamB: geminiData.betA.teamB || '',
-      betType: geminiData.betA.betType || '',
+      bettingHouse: claudeData.betA.bettingHouse || '',
+      teamA: claudeData.teamA || '',
+      teamB: claudeData.teamB || '',
+      betType: claudeData.betA.betType || '',
       selectedSide: 'A',
-      odds: geminiData.betA.odds || '0',
-      stake: geminiData.betA.stake || '0',
+      odds: claudeData.betA.odds || '0',
+      stake: claudeData.betA.stake || '0',
       payout: betAPayout,
-      profit: geminiData.betA.profit || '0'
+      profit: claudeData.betA.profit || '0'
     },
     betB: {
-      bettingHouse: geminiData.betB.bettingHouse || '',
-      teamA: geminiData.betB.teamA || '',
-      teamB: geminiData.betB.teamB || '',
-      betType: geminiData.betB.betType || '',
+      bettingHouse: claudeData.betB.bettingHouse || '',
+      teamA: claudeData.teamA || '',
+      teamB: claudeData.teamB || '',
+      betType: claudeData.betB.betType || '',
       selectedSide: 'B',
-      odds: geminiData.betB.odds || '0',
-      stake: geminiData.betB.stake || '0',
+      odds: claudeData.betB.odds || '0',
+      stake: claudeData.betB.stake || '0',
       payout: betBPayout,
-      profit: geminiData.betB.profit || '0'
+      profit: claudeData.betB.profit || '0'
     },
-    gameDate: geminiData.gameDate || new Date().toISOString().split('T')[0],
-    gameTime: geminiData.gameTime || '00:00',
-    sport: geminiData.sport || '',
-    league: geminiData.league || '',
+    gameDate: parsedDate,
+    gameTime: claudeData.gameTime || '00:00',
+    sport: claudeData.sport || '',
+    league: claudeData.league || '',
     totalProfitPercentage: cleanPercentage
   };
 };
