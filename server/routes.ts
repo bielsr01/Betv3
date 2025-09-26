@@ -112,13 +112,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const response = await anthropic.messages.create({
         model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
-        max_tokens: 400,  // Reduzido para velocidade
+        max_tokens: 250,  // Ultra-reduzido para economia
         messages: [{
           role: "user",
           content: [
             {
               type: "text",
-              text: "Extract betting data and organize in this EXACT format:\n\nDATA E HORA\n[date] [time]\n\nESPORTE\n[sport name]\n\nLIGA\n[league name]\n\nNOMES DOS TIMES\nTime A: [team A]\nTime B: [team B]\n\nAPOSTA 1\n[betting house 1]\nOdd: [odds1]\nStake: [stake1]\nLucro da operação: [profit1]\n\nAPOSTA 2\n[betting house 2]\nOdd: [odds2]\nStake: [stake2]\nLucro da operação: [profit2]\n\nLUCRO EM PORCENTAGEM\n[total profit %]\n\nBe fast and precise."
+              text: "Format output:\nDATA: [date time]\nESPORTE: [sport]\nLIGA: [league]\nTime A: [team1]\nTime B: [team2]\nAPOSTA 1: [house1] Odd:[odds1] Stake:[stake1] Lucro:[profit1]\nAPOSTA 2: [house2] Odd:[odds2] Stake:[stake2] Lucro:[profit2]\nLUCRO%: [total%]"
             },
             {
               type: "image",
@@ -181,37 +181,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const response = await anthropic.messages.create({
         model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
-        max_tokens: 600,  // Reduzido para velocidade
+        max_tokens: 400,  // Reduzido para economia
         messages: [{
           role: "user",
           content: [
             {
               type: "text",
-              text: `Analyze this betting slip image and extract structured data. Return JSON with:
-{
-  "betA": {
-    "team": "team name", 
-    "odds": number,
-    "stake": number,
-    "bettingHouse": "house name",
-    "date": "DD-MM-YYYY",
-    "time": "HH:MM",
-    "sport": "sport name",
-    "league": "league name"
-  },
-  "betB": {
-    "team": "opposing team",
-    "odds": number, 
-    "stake": number,
-    "bettingHouse": "house name",
-    "date": "DD-MM-YYYY", 
-    "time": "HH:MM",
-    "sport": "sport name",
-    "league": "league name"
-  }
-}
-
-IMPORTANT - SCAN FOR DATE/TIME INFORMATION:\n- Look in headers, top of screen, event information\n- Extract dates from formats like \"2025-09-26\" and convert to DD-MM-YYYY\n- Extract times from formats like \"07:00\" or \"07:00 -03:00\"\n- Search for words like \"Evento\", \"Event\", \"aproximadamente\", \"horas\"\n\nFocus on: team names, odds (decimal format), stakes, betting houses, dates (DD-MM-YYYY), times (HH:MM), sports, leagues. CRITICAL: Always extract date/time from anywhere in the image.`
+              text: `Return JSON: {\"betA\":{\"team\":\"team1\",\"odds\":1.0,\"stake\":100,\"bettingHouse\":\"house1\",\"date\":\"DD-MM-YYYY\",\"time\":\"HH:MM\",\"sport\":\"sport\",\"league\":\"league\"},\"betB\":{\"team\":\"team2\",\"odds\":2.0,\"stake\":200,\"bettingHouse\":\"house2\",\"date\":\"DD-MM-YYYY\",\"time\":\"HH:MM\",\"sport\":\"sport\",\"league\":\"league\"}}. Extract: teams, odds, stakes, houses, date/time, sport, league.`
             },
             {
               type: "image", 
@@ -272,6 +248,9 @@ IMPORTANT - SCAN FOR DATE/TIME INFORMATION:\n- Look in headers, top of screen, e
 
   return httpServer;
 }
+
+// Note: Real image compression would require sharp library
+// For now, focusing on other optimizations (prompt, max_tokens)
 
 // Helper function to detect image media type from base64 data
 function detectImageMediaType(imageBase64: string): "image/jpeg" | "image/png" | "image/webp" | "image/gif" {
