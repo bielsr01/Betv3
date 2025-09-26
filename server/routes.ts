@@ -121,7 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           content: [
             {
               type: "text",
-              text: "Format output:\nDATA: [date time]\nESPORTE: [sport]\nLIGA: [league]\nTime A: [team1]\nTime B: [team2]\nAPOSTA 1: [house1] Odd:[odds1] Stake:[stake1] Lucro:[profit1]\nAPOSTA 2: [house2] Odd:[odds2] Stake:[stake2] Lucro:[profit2]\nLUCRO%: [total%]"
+              text: "Extract and format:\nDATA: [DD/MM/AAAA HH:MM]\nESPORTE: [sport]\nLIGA: [league]\nTime A: [team1]\nTime B: [team2]\nAPOSTA 1: [house1] [type: Win/Draw/Over/Under/Handicap/etc] Odd:[odds1] Stake:[stake1] Lucro:[profit1]\nAPOSTA 2: [house2] [type: Win/Draw/Over/Under/Handicap/etc] Odd:[odds2] Stake:[stake2] Lucro:[profit2]\nLUCRO%: [total%]"
             },
             {
               type: "image",
