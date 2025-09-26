@@ -100,7 +100,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : imageBase64;
 
       // Determine image media type using helper function
-      const mediaType = detectImageMediaType(imageBase64);
+      const originalMediaType = detectImageMediaType(imageBase64);
+      
+      // Apply ultra-fast compression to reduce tokens dramatically
+      const { compressedBase64, newMediaType } = await compressImageForClaude(cleanBase64, originalMediaType);
 
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({
@@ -124,8 +127,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               type: "image",
               source: {
                 type: "base64",
-                media_type: mediaType,
-                data: cleanBase64
+                media_type: newMediaType,
+                data: compressedBase64
               }
             }
           ]
@@ -169,7 +172,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : imageBase64;
 
       // Determine image media type using helper function
-      const mediaType = detectImageMediaType(imageBase64);
+      const originalMediaType = detectImageMediaType(imageBase64);
+      
+      // Apply ultra-fast compression to reduce tokens dramatically
+      const { compressedBase64, newMediaType } = await compressImageForClaude(cleanBase64, originalMediaType);
 
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({
@@ -193,8 +199,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               type: "image", 
               source: {
                 type: "base64",
-                media_type: mediaType,
-                data: cleanBase64
+                media_type: newMediaType,
+                data: compressedBase64
               }
             }
           ]
@@ -249,8 +255,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-// Note: Real image compression would require sharp library
-// For now, focusing on other optimizations (prompt, max_tokens)
+// Ultra-fast image compression with Sharp for token reduction
+async function compressImageForClaude(base64: string, originalMediaType: string): Promise<{compressedBase64: string, newMediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"}> {
+  try {
+    const startTime = Date.now();
+    
+    // Convert base64 to buffer for Sharp processing
+    const inputBuffer = Buffer.from(base64, 'base64');
+    
+    // Ultra-fast compression settings optimized for SPEED
+    const compressedBuffer = await (await import('sharp')).default(inputBuffer)
+      .resize({
+        width: 800,        // Max width for OCR (sufficient for text recognition)
+        withoutEnlargement: true  // Don't upscale small images
+      })
+      .webp({
+        quality: 75,       // Good balance: speed vs file size
+        effort: 1          // Lowest effort = fastest compression (0-6 scale)
+      })
+      .toBuffer();
+    
+    const compressionTime = Date.now() - startTime;
+    const originalSize = inputBuffer.length;
+    const compressedSize = compressedBuffer.length;
+    const reductionPercentage = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
+    
+    console.log(`⚡ COMPRESSÃO ULTRA-RÁPIDA:`);
+    console.log(`  📊 ${originalSize} → ${compressedSize} bytes (-${reductionPercentage}%)`);
+    console.log(`  ⏱️  Tempo: ${compressionTime}ms`);
+    
+    return {
+      compressedBase64: compressedBuffer.toString('base64'),
+      newMediaType: 'image/webp' as const
+    };
+    
+  } catch (error) {
+    console.error('🔥 Erro na compressão ultra-rápida:', error);
+    // Fallback: return original if compression fails
+    return {
+      compressedBase64: base64,
+      newMediaType: originalMediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+    };
+  }
+}
 
 // Helper function to detect image media type from base64 data
 function detectImageMediaType(imageBase64: string): "image/jpeg" | "image/png" | "image/webp" | "image/gif" {
