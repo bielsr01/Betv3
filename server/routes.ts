@@ -390,30 +390,7 @@ OUTRAS REGRAS CRÍTICAS:
   
   console.log('✅ Successfully parsed surebet data:', JSON.stringify(jsonData, null, 2));
   
-  // 🛡️ DETERMINISTIC DATE VALIDATION - Ensures 100% accuracy
-  // Extract date directly from image OCR text to correct Claude inconsistencies
-  const validateAndCorrectDate = (originalData: any) => {
-    try {
-      // Known pattern: Interface shows (2025-09-27) but Claude sometimes extracts 26/09/2025
-      // This adds an extra layer of validation for critical date accuracy
-      console.log('🔍 Running date validation on:', originalData.gameDate);
-      
-      if (originalData.gameDate === '26/09/2025') {
-        console.log('🔍 Detected known date extraction issue - auto-correcting...');
-        // Based on user feedback: Interface consistently shows (2025-09-27) 
-        // but Claude extracts 26/09/2025. Auto-correct this specific pattern.
-        console.log('🔧 Auto-correcting date: 26/09/2025 → 27/09/2025');
-        originalData.gameDate = '27/09/2025';
-        console.log('✅ Date corrected successfully');
-      }
-      
-      return originalData;
-    } catch (error) {
-      console.warn('⚠️ Date validation failed, using original:', error);
-      return originalData;
-    }
-  };
-  
-  const validatedData = validateAndCorrectDate(jsonData);
-  return validatedData;
+  // ✅ RETORNANDO DADOS ORIGINAIS DO CLAUDE SEM VALIDAÇÃO FORÇADA
+  console.log('🔍 Data extraída pelo Claude:', jsonData.gameDate, jsonData.gameTime);
+  return jsonData;
 }
