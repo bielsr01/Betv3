@@ -397,6 +397,25 @@ export default function BetTracker() {
       const profitPercentageA = totalStake > 0 ? ((payoutA - totalStake) / totalStake) * 100 : 0;
       const profitPercentageB = totalStake > 0 ? ((payoutB - totalStake) / totalStake) * 100 : 0;
       
+      // Helper function to ensure gameDate is in DD-MM-YYYY string format
+      const formatGameDate = (gameDate: string | Date): string => {
+        if (gameDate instanceof Date) {
+          const day = gameDate.getUTCDate().toString().padStart(2, '0');
+          const month = (gameDate.getUTCMonth() + 1).toString().padStart(2, '0');
+          const year = gameDate.getUTCFullYear().toString();
+          return `${day}-${month}-${year}`;
+        }
+        // If it's already a string, ensure it's in DD-MM-YYYY format
+        if (typeof gameDate === 'string') {
+          if (gameDate.includes('/')) {
+            // Convert DD/MM/YYYY to DD-MM-YYYY
+            return gameDate.replace(/\//g, '-');
+          }
+          return gameDate; // Already in DD-MM-YYYY format
+        }
+        return '';
+      };
+
       // Create bet A via API
       const betAData = {
         bettingHouse: data.betA.bettingHouse,
@@ -406,7 +425,10 @@ export default function BetTracker() {
         odds: data.betA.odds,
         stake: data.betA.stake,
         payout: (Number(data.betA.stake) * Number(data.betA.odds)).toFixed(2),
-        gameDate: data.gameDate,
+        gameDate: formatGameDate(data.gameDate),
+        gameTime: data.gameTime || '00:00',
+        sport: data.sport,
+        league: data.league,
         status: 'pending' as const,
         isVerified: true,
         pairId: pairId,
@@ -424,7 +446,10 @@ export default function BetTracker() {
         odds: data.betB.odds,
         stake: data.betB.stake,
         payout: (Number(data.betB.stake) * Number(data.betB.odds)).toFixed(2),
-        gameDate: data.gameDate,
+        gameDate: formatGameDate(data.gameDate),
+        gameTime: data.gameTime || '00:00',
+        sport: data.sport,
+        league: data.league,
         status: 'pending' as const,
         isVerified: true,
         pairId: pairId,
