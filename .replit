@@ -23,6 +23,10 @@ externalPort = 3001
 localPort = 40219
 externalPort = 3000
 
+[[ports]]
+localPort = 41837
+externalPort = 3002
+
 [env]
 PORT = "5000"
 
@@ -51,5 +55,5 @@ waitForPort = 5000
 outputType = "webview"
 
 [agent]
-integrations = ["javascript_mem_db:1.0.0", "javascript_gemini:1.0.0", "javascript_database:1.0.0", "perplexity_v0:1.0.0"]
+integrations = ["javascript_mem_db:1.0.0", "javascript_gemini:1.0.0", "javascript_database:1.0.0", "perplexity_v0:1.0.0", "javascript_anthropic:1.0.0"]
 expertMode = true
