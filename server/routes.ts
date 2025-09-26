@@ -285,33 +285,51 @@ async function extractSurebetData(imageBase64: string, anthropic: any) {
       content: [
         {
           type: "text",
-          text: `Extraia dados desta imagem de surebet. Retorne APENAS JSON válido no formato abaixo, com dados REAIS da imagem:
+          text: `Analise esta captura de tela do SureBet Calculator e extraia EXATAMENTE os dados mostrados na interface.
+
+INSTRUÇÕES ESPECÍFICAS:
+1. DATA E HORA: Encontre a data/hora do jogo (formato DD/MM/YYYY) - NÃO use datas antigas, extraia a data REAL mostrada
+2. TIMES: Extraia os nomes dos times exatamente como mostrado (geralmente com "–" ou "vs" entre eles)
+3. ESPORTE/LIGA: Identifique o esporte e liga mostrados na interface
+4. CASAS DE APOSTAS: Extraia os nomes das casas (colunas da tabela)
+5. TIPOS DE APOSTA: Extraia EXATAMENTE o texto da coluna "Chance" ou tipo de aposta - não invente texto
+6. ODDS: Números das odds exatos da tabela
+7. STAKES: Valores investidos em cada aposta (coluna valor)
+8. LUCRO: Valores de lucro mostrados
+9. PORCENTAGEM: Porcentagem de lucro total (geralmente no topo)
+
+Retorne APENAS JSON válido no formato:
 
 {
-  "gameDate": "DD/MM/AAAA da imagem",
-  "gameTime": "HH:MM da imagem", 
-  "sport": "esporte da imagem",
-  "league": "liga da imagem",
-  "teamA": "time A da imagem",
-  "teamB": "time B da imagem",
+  "gameDate": "DD/MM/YYYY",
+  "gameTime": "HH:MM",
+  "sport": "nome_do_esporte",
+  "league": "nome_da_liga", 
+  "teamA": "time_1",
+  "teamB": "time_2",
   "betA": {
-    "bettingHouse": "casa de apostas real",
-    "betType": "tipo exato da coluna chance",
-    "odds": "odd real",
-    "stake": "valor real da aposta",
-    "profit": "lucro real"
+    "bettingHouse": "casa_1",
+    "betType": "tipo_aposta_exato",
+    "odds": "1.XX",
+    "stake": "XXXX.XX",
+    "profit": "XXX.XX"
   },
   "betB": {
-    "bettingHouse": "casa de apostas real",
-    "betType": "tipo exato da coluna chance", 
-    "odds": "odd real",
-    "stake": "valor real da aposta",
-    "profit": "lucro real"
+    "bettingHouse": "casa_2", 
+    "betType": "tipo_aposta_exato",
+    "odds": "1.XX",
+    "stake": "XXXX.XX", 
+    "profit": "XXX.XX"
   },
-  "totalProfitPercentage": "porcentagem real"
+  "totalProfitPercentage": "X.XX%"
 }
 
-CRÍTICO: Use dados REAIS da imagem fornecida, não valores de exemplo!`
+IMPORTANTE: 
+- Use dados REAIS da imagem, não exemplos
+- Mantenha formatação original dos tipos de aposta
+- Use data atual da interface, não datas antigas
+- Preserve acentos e caracteres especiais
+- Use apenas números com pontos decimais (formato americano)`
         },
         {
           type: "image",
