@@ -100,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : imageBase64;
 
       // Determine image media type
-      let mediaType = 'image/jpeg';
+      let mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif" = 'image/jpeg';
       if (imageBase64.includes('data:image/png')) mediaType = 'image/png';
       else if (imageBase64.includes('data:image/webp')) mediaType = 'image/webp';
 
@@ -171,7 +171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : imageBase64;
 
       // Determine image media type
-      let mediaType = 'image/jpeg';
+      let mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif" = 'image/jpeg';
       if (imageBase64.includes('data:image/png')) mediaType = 'image/png';
       else if (imageBase64.includes('data:image/webp')) mediaType = 'image/webp';
 
