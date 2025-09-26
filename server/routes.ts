@@ -193,7 +193,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           content: [
             {
               type: "text",
-              text: `Return JSON: {\"betA\":{\"team\":\"team1\",\"odds\":1.0,\"stake\":100,\"bettingHouse\":\"house1\",\"date\":\"DD-MM-YYYY\",\"time\":\"HH:MM\",\"sport\":\"sport\",\"league\":\"league\"},\"betB\":{\"team\":\"team2\",\"odds\":2.0,\"stake\":200,\"bettingHouse\":\"house2\",\"date\":\"DD-MM-YYYY\",\"time\":\"HH:MM\",\"sport\":\"sport\",\"league\":\"league\"}}. Extract: teams, odds, stakes, houses, date/time, sport, league.`
+              text: `Extrair dados EXATOS da imagem e retornar JSON:
+{
+  "betA": {
+    "bettingHouse": "[nome da casa]",
+    "teamA": "[time 1]", 
+    "teamB": "[time 2]",
+    "betType": "[COPIAR EXATO texto coluna tipo/chance: exemplo 'Acima 7.5 1º período 2º time' com símbolos/acentos]",
+    "odds": "[valor]",
+    "stake": "[valor]", 
+    "profit": "[lucro]",
+    "date": "[DD-MM-YYYY]",
+    "time": "[HH:MM]",
+    "sport": "[esporte]",
+    "league": "[liga]"
+  },
+  "betB": {
+    "bettingHouse": "[nome da casa]",
+    "teamA": "[time 1]",
+    "teamB": "[time 2]", 
+    "betType": "[COPIAR EXATO texto coluna tipo/chance: exemplo 'Acima 7.5 1º período 2º time' com símbolos/acentos]",
+    "odds": "[valor]",
+    "stake": "[valor]",
+    "profit": "[lucro]",
+    "date": "[DD-MM-YYYY]", 
+    "time": "[HH:MM]",
+    "sport": "[esporte]",
+    "league": "[liga]"
+  },
+  "totalProfitPercentage": "[percentual]"
+}`
             },
             {
               type: "image", 
