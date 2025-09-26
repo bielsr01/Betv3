@@ -121,7 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           content: [
             {
               type: "text",
-              text: "Extract and format:\nDATA: [DD/MM/AAAA HH:MM]\nESPORTE: [sport]\nLIGA: [league]\nTime A: [team1]\nTime B: [team2]\nAPOSTA 1: [house1] [type: Win/Draw/Over/Under/Handicap/etc] Odd:[odds1] Stake:[stake1] Lucro:[profit1]\nAPOSTA 2: [house2] [type: Win/Draw/Over/Under/Handicap/etc] Odd:[odds2] Stake:[stake2] Lucro:[profit2]\nLUCRO%: [total%]"
+              text: "Extrair dados EXATOS da imagem:\nDATA: [DD/MM/AAAA HH:MM]\nESPORTE: [nome do esporte]\nLIGA: [nome da liga]\nTime A: [nome time 1]\nTime B: [nome time 2]\nAPOSTA 1: Casa:[nome da casa] Tipo:[copiar texto COMPLETO da célula do tipo de aposta, exemplo: 'Acima 7.5 1º o período 2º o time' ou 'Handicap Asiático -1.5' com TODOS símbolos/acentos] Odd:[valor] Stake:[valor] Lucro:[valor]\nAPOSTA 2: Casa:[nome da casa] Tipo:[copiar texto COMPLETO da célula do tipo de aposta, exemplo: 'Acima 7.5 1º o período 2º o time' ou 'Handicap Asiático -1.5' com TODOS símbolos/acentos] Odd:[valor] Stake:[valor] Lucro:[valor]\nLUCRO%: [percentual]"
             },
             {
               type: "image",
