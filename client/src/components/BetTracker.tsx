@@ -99,7 +99,8 @@ const parseOCRText = (text: string): OCRData => {
     const dateTimeMatch = text.match(/(\d{4})-?(\d{2})-?(\d{2})\s+(\d{1,2}):?(\d{2})/i);
     if (dateTimeMatch) {
       const [, year, month, day, hour, minute] = dateTimeMatch;
-      result.gameDate = new Date(`${year}-${month}-${day}T${hour.padStart(2, '0')}:${minute}:00`);
+      // CORRIGIDO: Usar string no formato DD-MM-YYYY em vez de Date object para evitar timezone
+      result.gameDate = `${day}-${month}-${year}`;
       result.gameTime = `${hour.padStart(2, '0')}:${minute}`;
     }
     
