@@ -289,13 +289,15 @@ async function extractSurebetData(imageBase64: string, anthropic: any) {
 
 INSTRUÇÕES ESPECÍFICAS PARA LOCALIZAÇÃO DOS DADOS:
 
-1. DATA E HORA - INSTRUÇÕES OBRIGATÓRIAS (LEIA 3 VEZES):
-   - NO TOPO DA IMAGEM procure EXATAMENTE: "Evento em X dia(s) (2025-09-27"
-   - A DATA REAL está dentro dos parênteses: (YYYY-MM-DD HH:MM-XX:XX)
-   - EXEMPLO: "Evento em 1 dia (2025-09-27 13:00-03:00)" → USE 2025-09-27
-   - NUNCA use outras datas da página - SÓ a dos parênteses do TÍTULO
-   - Converta YYYY-MM-DD → DD/MM/YYYY (ex: 2025-09-27 → 27/09/2025)
-   - SE VIR "(2025-09-27" nos parênteses, retorne "27/09/2025" - SEM EXCEÇÕES
+1. DATA E HORA - INSTRUÇÕES OBRIGATÓRIAS (LEIA COM ATENÇÃO):
+   - NO TOPO DA IMAGEM procure o texto do evento: "Evento em X dia(s)" ou "Evento em X horas"
+   - A DATA E HORA REAIS estão dentro dos parênteses: (YYYY-MM-DD HH:MM-XX:XX)
+   - EXTRAIA SEMPRE OS VALORES REAIS da interface, não invente ou use padrões
+   - EXEMPLOS DE EXTRAÇÃO CORRETA:
+     * "Evento em 1 dia (2025-09-27 13:00-03:00)" → "27/09/2025" e "13:00"
+     * "Evento em 6 horas (2025-09-26 07:00-03:00)" → "26/09/2025" e "07:00"  
+     * "Evento em 20 horas (2025-09-26 23:15-03:00)" → "26/09/2025" e "23:15"
+   - Converta YYYY-MM-DD → DD/MM/YYYY e extraia HH:MM da interface REAL
 
 2. TIMES: Extraia os nomes dos times exatamente como mostrado no título (geralmente com "–" separando)
 
@@ -344,14 +346,12 @@ Retorne APENAS JSON válido no formato:
   "totalProfitPercentage": "X.XX%"
 }
 
-⚠️  CRÍTICO - DATA (LEIA OBRIGATORIAMENTE): ⚠️
-- PROCURE: "Evento em X dia(s) (2025-09-27 13:00-03:00)"
-- USE APENAS a data dentro dos parênteses do título superior
-- SE encontrar "(2025-09-27", extraia 2025-09-27 e converta para 27/09/2025
-- SE encontrar "(2025-09-26", extraia 2025-09-26 e converta para 26/09/2025  
-- IGNORE totalmente qualquer data em outras partes da tela
-- FOQUE EXCLUSIVAMENTE nos primeiros parênteses do cabeçalho
-- NUNCA calcule ou modifique - copie EXATO e converta formato
+⚠️  CRÍTICO - EXTRAIA DATA E HORA REAIS DA INTERFACE: ⚠️
+- PROCURE no topo: "Evento em X dia(s)" ou "Evento em X horas" seguido de parênteses
+- USE APENAS a data e hora reais dentro dos parênteses
+- IGNORE totalmente qualquer outra data ou hora na tela
+- FOQUE EXCLUSIVAMENTE nos parênteses do cabeçalho azul superior
+- COPIE EXATO os valores e converta apenas o formato (YYYY-MM-DD → DD/MM/YYYY)
 
 OUTRAS REGRAS CRÍTICAS:
 - Use dados REAIS da imagem, não exemplos ou interpretações
@@ -392,5 +392,8 @@ OUTRAS REGRAS CRÍTICAS:
   
   // ✅ RETORNANDO DADOS ORIGINAIS DO CLAUDE SEM VALIDAÇÃO FORÇADA
   console.log('🔍 Data extraída pelo Claude:', jsonData.gameDate, jsonData.gameTime);
+  console.log('🔍 Times extraídos:', jsonData.teamA, 'vs', jsonData.teamB);
+  console.log('🔍 Tamanho da imagem original:', imageBase64.length);
+  console.log('🔍 Tamanho da imagem comprimida:', compressedBase64.length);
   return jsonData;
 }
