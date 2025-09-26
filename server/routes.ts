@@ -114,37 +114,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
 
       const response = await anthropic.messages.create({
-        model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
-        max_tokens: 400,  // Aumentado para JSON completo
+        model: "claude-3-haiku-20240307", // Mantendo Haiku para velocidade
+        max_tokens: 1000,  // Aumentado conforme seu JSON
         messages: [{
           role: "user",
           content: [
             {
               type: "text",
-              text: `Extrair dados EXATOS da imagem e retornar JSON:
-{
-  "gameDate": "[data da imagem convertida para DD/MM/YY]",
-  "gameTime": "[horário da imagem HH:MM]",
-  "sport": "[esporte]",
-  "league": "[liga/campeonato]",
-  "teamA": "[nome time 1]",
-  "teamB": "[nome time 2]",
-  "betA": {
-    "bettingHouse": "[casa aposta linha 1]",
-    "odds": "[valor odd linha 1]",
-    "betType": "[texto EXATO coluna chance linha 1]",
-    "stake": "[valor stake linha 1]",
-    "profit": "[valor lucro linha 1]"
-  },
-  "betB": {
-    "bettingHouse": "[casa aposta linha 2]", 
-    "odds": "[valor odd linha 2]",
-    "betType": "[texto EXATO coluna chance linha 2]",
-    "stake": "[valor stake linha 2]",
-    "profit": "[valor lucro linha 2]"
-  },
-  "totalProfitPercentage": "[percentual]"
-}`
+              text: `Analise esta imagem de surebet e extraia EXATAMENTE os dados mostrados. Retorne APENAS no formato especificado abaixo, sem texto adicional.
+
+Formato de resposta OBRIGATÓRIO (copie exatamente esta estrutura):
+
+Data do evento: 26/09/2025
+Hora: 15:45
+
+Time A: OH Leuven
+Time B: Anderlecht
+
+Aposta 1
+Casa: Cassino (BR)
+Tipo: Acima 2.25
+Odd: 1.84
+Valor da Aposta: 2650.00
+Lucro: 106.00
+
+Aposta 2
+Casa: Betano (BR)
+Tipo: Abaixo 2.25
+Odd: 2.30
+Valor da Aposta: 2120.00
+Lucro: 106.00
+
+Lucro%: 2.22
+
+REGRAS IMPORTANTES:
+- Substitua APENAS os valores pelos dados da imagem atual
+- Para o campo 'Tipo': use EXATAMENTE o texto completo da coluna 'Chance' (ex: se aparecer 'Acima 44.5 1º o set', use isso completo no campo Tipo)
+- Mantenha EXATAMENTE a mesma estrutura e ordem mostrada acima
+- Use ponto decimal para números (não vírgula)
+- Não adicione explicações ou texto extra
+- Retorne APENAS os dados no formato especificado`
             },
             {
               type: "image",
@@ -161,98 +170,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const endTime = Date.now();
       console.log(`⚡ Claude processed in ${endTime - startTime}ms`);
 
-      // Parse JSON response
-      let jsonData;
-      try {
-        const responseText = response.content[0].type === 'text' ? response.content[0].text : '{}';
-        console.log('=== CLAUDE RESPONSE START ===');
-        console.log(responseText);
-        console.log('=== CLAUDE RESPONSE END ===');
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        const jsonStr = jsonMatch ? jsonMatch[0] : '{}';
-        console.log('=== EXTRACTED JSON START ===');
-        console.log(jsonStr);
-        console.log('=== EXTRACTED JSON END ===');
-        jsonData = JSON.parse(jsonStr);
-        console.log('=== PARSED DATA START ===');
-        console.log(JSON.stringify(jsonData, null, 2));
-        console.log('=== PARSED DATA END ===');
-      } catch (parseError) {
-        console.error('JSON parse error:', parseError);
-        res.status(500).send('Erro ao processar resposta da IA');
-        return;
-      }
-
-      // Server-side formatting to exact user specification
-      const formatStructuredText = (data: any) => {
-        // Convert date to DD/MM/YY format (2 digits year)
-        let formattedDate = data.gameDate || '';
-        
-        // Handle different date formats
-        if (formattedDate.includes('-') || formattedDate.includes('/')) {
-          try {
-            let parts;
-            if (formattedDate.includes('-')) {
-              parts = formattedDate.split('-'); // YYYY-MM-DD
-            } else {
-              parts = formattedDate.split('/'); // DD/MM/YYYY
-            }
-            
-            if (parts.length >= 3) {
-              let day, month, year;
-              
-              if (formattedDate.includes('-')) {
-                // YYYY-MM-DD format
-                year = parts[0].slice(-2); // Last 2 digits
-                month = parts[1].padStart(2, '0');
-                day = parts[2].padStart(2, '0');
-              } else {
-                // DD/MM/YYYY format  
-                day = parts[0].padStart(2, '0');
-                month = parts[1].padStart(2, '0');
-                year = parts[2].slice(-2); // Last 2 digits
-              }
-              
-              formattedDate = `${day}/${month}/${year}`;
-            }
-          } catch (e) {
-            console.error('Date conversion error:', e);
-          }
-        }
-
-        // Use array join to ensure line breaks work correctly - EACH FIELD ON SEPARATE LINE
-        const lines = [
-          `DATA: ${formattedDate} ${data.gameTime || ''}`,
-          `ESPORTE: ${data.sport || ''}`,
-          `LIGA: ${data.league || ''}`,
-          `Time A: ${data.teamA || ''}`,
-          `Time B: ${data.teamB || ''}`,
-          '',
-          `APOSTA 1:`,
-          `Casa: ${data.betA?.bettingHouse || ''}`,
-          `Odd: ${data.betA?.odds || ''}`,
-          `Tipo: ${data.betA?.betType || ''}`,
-          `Stake: ${data.betA?.stake || ''}`,
-          `Lucro: ${data.betA?.profit || ''}`,
-          '',
-          `APOSTA 2:`,
-          `Casa: ${data.betB?.bettingHouse || ''}`,
-          `Odd: ${data.betB?.odds || ''}`,
-          `Tipo: ${data.betB?.betType || ''}`,
-          `Stake: ${data.betB?.stake || ''}`,
-          `Lucro: ${data.betB?.profit || ''}`,
-          '',
-          `LUCRO%: ${data.totalProfitPercentage || ''}`
-        ];
-
-        return lines.join('\n');
-      };
-
-      const formattedText = formatStructuredText(jsonData);
+      // Com o prompt perfeito do usuário, Claude retorna diretamente no formato correto
+      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
       
-      // Return formatted text as plain text
+      // Return formatted text as plain text - sem parsing JSON, formato direto
       res.set('Content-Type', 'text/plain; charset=utf-8');
-      res.send(formattedText);
+      res.send(responseText.trim());
       
     } catch (error) {
       console.error('Claude OCR error:', error);
