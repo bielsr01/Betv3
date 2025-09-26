@@ -115,13 +115,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const response = await anthropic.messages.create({
         model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
-        max_tokens: 250,  // Ultra-reduzido para economia
+        max_tokens: 400,  // Aumentado para JSON completo
         messages: [{
           role: "user",
           content: [
             {
               type: "text",
-              text: "Extrair dados EXATOS da imagem:\nDATA: [DD/MM/AAAA HH:MM]\nESPORTE: [nome do esporte]\nLIGA: [nome da liga]\nTime A: [nome time 1]\nTime B: [nome time 2]\nAPOSTA 1: Casa:[nome da casa] Tipo:[copiar texto COMPLETO da célula do tipo de aposta, exemplo: 'Acima 7.5 1º o período 2º o time' ou 'Handicap Asiático -1.5' com TODOS símbolos/acentos] Odd:[valor] Stake:[valor] Lucro:[valor]\nAPOSTA 2: Casa:[nome da casa] Tipo:[copiar texto COMPLETO da célula do tipo de aposta, exemplo: 'Acima 7.5 1º o período 2º o time' ou 'Handicap Asiático -1.5' com TODOS símbolos/acentos] Odd:[valor] Stake:[valor] Lucro:[valor]\nLUCRO%: [percentual]"
+              text: `Extrair dados EXATOS da imagem e retornar JSON:
+{
+  "gameDate": "[data da imagem convertida para DD/MM/YY]",
+  "gameTime": "[horário da imagem HH:MM]",
+  "sport": "[esporte]",
+  "league": "[liga/campeonato]",
+  "teamA": "[nome time 1]",
+  "teamB": "[nome time 2]",
+  "betA": {
+    "bettingHouse": "[casa aposta linha 1]",
+    "odds": "[valor odd linha 1]",
+    "betType": "[texto EXATO coluna chance linha 1]",
+    "stake": "[valor stake linha 1]",
+    "profit": "[valor lucro linha 1]"
+  },
+  "betB": {
+    "bettingHouse": "[casa aposta linha 2]", 
+    "odds": "[valor odd linha 2]",
+    "betType": "[texto EXATO coluna chance linha 2]",
+    "stake": "[valor stake linha 2]",
+    "profit": "[valor lucro linha 2]"
+  },
+  "totalProfitPercentage": "[percentual]"
+}`
             },
             {
               type: "image",
@@ -138,19 +161,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const endTime = Date.now();
       console.log(`⚡ Claude processed in ${endTime - startTime}ms`);
 
-      const rawText = response.content[0].type === 'text' 
-        ? response.content[0].text 
-        : 'Nenhum texto extraído da imagem.';
+      // Parse JSON response
+      let jsonData;
+      try {
+        const responseText = response.content[0].type === 'text' ? response.content[0].text : '{}';
+        console.log('=== CLAUDE RESPONSE START ===');
+        console.log(responseText);
+        console.log('=== CLAUDE RESPONSE END ===');
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : '{}';
+        console.log('=== EXTRACTED JSON START ===');
+        console.log(jsonStr);
+        console.log('=== EXTRACTED JSON END ===');
+        jsonData = JSON.parse(jsonStr);
+        console.log('=== PARSED DATA START ===');
+        console.log(JSON.stringify(jsonData, null, 2));
+        console.log('=== PARSED DATA END ===');
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError);
+        res.status(500).send('Erro ao processar resposta da IA');
+        return;
+      }
+
+      // Server-side formatting to exact user specification
+      const formatStructuredText = (data: any) => {
+        // Convert date to DD/MM/YY format (2 digits year)
+        let formattedDate = data.gameDate || '';
+        
+        // Handle different date formats
+        if (formattedDate.includes('-') || formattedDate.includes('/')) {
+          try {
+            let parts;
+            if (formattedDate.includes('-')) {
+              parts = formattedDate.split('-'); // YYYY-MM-DD
+            } else {
+              parts = formattedDate.split('/'); // DD/MM/YYYY
+            }
+            
+            if (parts.length >= 3) {
+              let day, month, year;
+              
+              if (formattedDate.includes('-')) {
+                // YYYY-MM-DD format
+                year = parts[0].slice(-2); // Last 2 digits
+                month = parts[1].padStart(2, '0');
+                day = parts[2].padStart(2, '0');
+              } else {
+                // DD/MM/YYYY format  
+                day = parts[0].padStart(2, '0');
+                month = parts[1].padStart(2, '0');
+                year = parts[2].slice(-2); // Last 2 digits
+              }
+              
+              formattedDate = `${day}/${month}/${year}`;
+            }
+          } catch (e) {
+            console.error('Date conversion error:', e);
+          }
+        }
+
+        // Use array join to ensure line breaks work correctly - EACH FIELD ON SEPARATE LINE
+        const lines = [
+          `DATA: ${formattedDate} ${data.gameTime || ''}`,
+          `ESPORTE: ${data.sport || ''}`,
+          `LIGA: ${data.league || ''}`,
+          `Time A: ${data.teamA || ''}`,
+          `Time B: ${data.teamB || ''}`,
+          '',
+          `APOSTA 1:`,
+          `Casa: ${data.betA?.bettingHouse || ''}`,
+          `Odd: ${data.betA?.odds || ''}`,
+          `Tipo: ${data.betA?.betType || ''}`,
+          `Stake: ${data.betA?.stake || ''}`,
+          `Lucro: ${data.betA?.profit || ''}`,
+          '',
+          `APOSTA 2:`,
+          `Casa: ${data.betB?.bettingHouse || ''}`,
+          `Odd: ${data.betB?.odds || ''}`,
+          `Tipo: ${data.betB?.betType || ''}`,
+          `Stake: ${data.betB?.stake || ''}`,
+          `Lucro: ${data.betB?.profit || ''}`,
+          '',
+          `LUCRO%: ${data.totalProfitPercentage || ''}`
+        ];
+
+        return lines.join('\n');
+      };
+
+      const formattedText = formatStructuredText(jsonData);
       
-      // Return raw text as plain text
+      // Return formatted text as plain text
       res.set('Content-Type', 'text/plain; charset=utf-8');
-      res.send(rawText);
+      res.send(formattedText);
       
     } catch (error) {
       console.error('Claude OCR error:', error);
       res.status(500).json({ error: 'Failed to get Claude OCR result' });
     }
   });
+
 
   // OCR Analysis endpoint - structured data extraction using Claude Haiku
   app.post('/api/ocr/analyze', async (req, res) => {
