@@ -152,10 +152,17 @@ export default function OCRVerification({
       }
       // Fallback to standard date formatting (no time)
       try {
+        // If gameDate is in DD-MM-YYYY format, convert to a proper Date object
+        if (typeof formData.gameDate === 'string' && formData.gameDate.includes('-')) {
+          const [day, month, year] = formData.gameDate.split('-');
+          const date = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day)));
+          return format(date, 'dd-MM-yyyy', { locale: ptBR });
+        }
         return format(new Date(formData.gameDate), 'dd-MM-yyyy', { locale: ptBR });
       } catch (error) {
         console.warn('Error formatting date:', formData.gameDate, error);
-        return formData.gameDate?.toString() || null;
+        // Return the original string if all else fails
+        return typeof formData.gameDate === 'string' ? formData.gameDate : null;
       }
     }
     return null;

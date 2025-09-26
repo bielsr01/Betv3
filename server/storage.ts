@@ -119,11 +119,34 @@ export class MemStorage implements IStorage {
 
   async createBet(insertBet: InsertBet): Promise<Bet> {
     const id = randomUUID();
+    
+    // Ensure gameDate is a string in DD-MM-YYYY format
+    let formattedGameDate: string;
+    const gameDate = insertBet.gameDate;
+    
+    // Since InsertBet.gameDate is typed as string, treat it as string only
+    if (typeof gameDate === 'string') {
+      // Ensure proper DD-MM-YYYY format
+      if (gameDate.includes('/')) {
+        // Convert DD/MM/YYYY to DD-MM-YYYY
+        formattedGameDate = gameDate.replace(/\//g, '-');
+      } else {
+        formattedGameDate = gameDate;
+      }
+    } else {
+      // Fallback to current date in DD-MM-YYYY format
+      const now = new Date();
+      const day = now.getUTCDate().toString().padStart(2, '0');
+      const month = (now.getUTCMonth() + 1).toString().padStart(2, '0');
+      const year = now.getUTCFullYear().toString();
+      formattedGameDate = `${day}-${month}-${year}`;
+    }
+    
     const bet: Bet = { 
       ...insertBet, 
       id, 
       status: insertBet.status || 'pending',
-      gameDate: insertBet.gameDate || new Date(),
+      gameDate: formattedGameDate,
       isVerified: insertBet.isVerified || false,
       totalPairStake: insertBet.totalPairStake || null,
       profitPercentage: insertBet.profitPercentage || null,
