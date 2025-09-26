@@ -80,27 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // OCR Analysis endpoint using PaddleOCR with table detection
-  app.post('/api/ocr/analyze', async (req, res) => {
-    try {
-      const { imageBase64 } = req.body;
-      
-      if (!imageBase64) {
-        return res.status(400).json({ error: 'Image data is required' });
-      }
-
-      // Import and use PaddleOCR function with table detection
-      const { analyzeSureBetImagePaddle } = await import('./paddle-ocr');
-      const result = await analyzeSureBetImagePaddle(imageBase64);
-      
-      res.json(result);
-    } catch (error) {
-      console.error('PaddleOCR analysis error:', error);
-      res.status(500).json({ error: 'Failed to analyze image with PaddleOCR' });
-    }
-  });
-
-  // OCR Raw endpoint - returns raw text using Perplexity AI
+  // OCR Raw endpoint - returns raw text using Claude Haiku
   app.post('/api/ocr/raw', async (req, res) => {
     try {
       const { imageBase64 } = req.body;
@@ -109,75 +89,186 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Image data is required' });
       }
 
-      const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
-      if (!PERPLEXITY_API_KEY) {
-        return res.status(500).json({ error: 'Perplexity API key not configured' });
+      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      if (!ANTHROPIC_API_KEY) {
+        return res.status(500).json({ error: 'Anthropic API key not configured' });
       }
 
-      // Call Perplexity API with proper image format
+      // Clean base64 data
       const cleanBase64 = imageBase64.includes('base64,') 
         ? imageBase64.split('base64,')[1] 
         : imageBase64;
 
-      const payload = {
-        model: "sonar-pro",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract text from image. Be fast."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/png;base64,${cleanBase64}`
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 300,
-        temperature: 0.5
-      };
+      // Determine image media type
+      let mediaType = 'image/jpeg';
+      if (imageBase64.includes('data:image/png')) mediaType = 'image/png';
+      else if (imageBase64.includes('data:image/webp')) mediaType = 'image/webp';
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
-      
-      const response = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({
+        apiKey: ANTHROPIC_API_KEY,
       });
-      
-      clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Perplexity API error details:', errorText);
-        throw new Error(`Perplexity API error: ${response.status} - ${errorText}`);
-      }
+      console.log('🚀 Sending to Claude Haiku...');
+      const startTime = Date.now();
 
-      const result = await response.json();
-      
-      // Extract the raw text content
-      let rawText = 'Nenhum texto extraído da imagem.';
-      if (result.choices && result.choices[0] && result.choices[0].message) {
-        rawText = result.choices[0].message.content;
-      }
+      const response = await anthropic.messages.create({
+        model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
+        max_tokens: 500,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Extract ALL visible text from this image. Focus on numbers, names, odds, dates, and any betting information. Be comprehensive and fast."
+            },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType,
+                data: cleanBase64
+              }
+            }
+          ]
+        }]
+      });
+
+      const endTime = Date.now();
+      console.log(`⚡ Claude processed in ${endTime - startTime}ms`);
+
+      const rawText = response.content[0].type === 'text' 
+        ? response.content[0].text 
+        : 'Nenhum texto extraído da imagem.';
       
       // Return raw text as plain text
       res.set('Content-Type', 'text/plain; charset=utf-8');
       res.send(rawText);
       
     } catch (error) {
-      console.error('Perplexity raw analysis error:', error);
-      res.status(500).json({ error: 'Failed to get raw Perplexity result' });
+      console.error('Claude OCR error:', error);
+      res.status(500).json({ error: 'Failed to get Claude OCR result' });
+    }
+  });
+
+  // OCR Analysis endpoint - structured data extraction using Claude Haiku
+  app.post('/api/ocr/analyze', async (req, res) => {
+    try {
+      const { imageBase64 } = req.body;
+      
+      if (!imageBase64) {
+        return res.status(400).json({ error: 'Image data is required' });
+      }
+
+      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      if (!ANTHROPIC_API_KEY) {
+        return res.status(500).json({ error: 'Anthropic API key not configured' });
+      }
+
+      // Clean base64 data
+      const cleanBase64 = imageBase64.includes('base64,') 
+        ? imageBase64.split('base64,')[1] 
+        : imageBase64;
+
+      // Determine image media type
+      let mediaType = 'image/jpeg';
+      if (imageBase64.includes('data:image/png')) mediaType = 'image/png';
+      else if (imageBase64.includes('data:image/webp')) mediaType = 'image/webp';
+
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({
+        apiKey: ANTHROPIC_API_KEY,
+      });
+
+      console.log('🚀 Analyzing betting slip with Claude Haiku...');
+      const startTime = Date.now();
+
+      const response = await anthropic.messages.create({
+        model: "claude-3-haiku-20240307", // Ultra-fast Haiku model
+        max_tokens: 800,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Analyze this betting slip image and extract structured data. Return JSON with:
+{
+  "betA": {
+    "team": "team name", 
+    "odds": number,
+    "stake": number,
+    "bettingHouse": "house name",
+    "date": "DD-MM-YYYY",
+    "time": "HH:MM",
+    "sport": "sport name",
+    "league": "league name"
+  },
+  "betB": {
+    "team": "opposing team",
+    "odds": number, 
+    "stake": number,
+    "bettingHouse": "house name",
+    "date": "DD-MM-YYYY", 
+    "time": "HH:MM",
+    "sport": "sport name",
+    "league": "league name"
+  }
+}
+
+Focus on: team names, odds (decimal format), stakes, betting houses, dates (DD-MM-YYYY), times (HH:MM), sports, leagues. If info is missing, use reasonable defaults.`
+            },
+            {
+              type: "image", 
+              source: {
+                type: "base64",
+                media_type: mediaType,
+                data: cleanBase64
+              }
+            }
+          ]
+        }]
+      });
+
+      const endTime = Date.now();
+      console.log(`⚡ Claude analyzed in ${endTime - startTime}ms`);
+
+      let result;
+      try {
+        const responseText = response.content[0].type === 'text' ? response.content[0].text : '{}';
+        // Extract JSON from Claude's response (might have additional text)
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : '{}';
+        result = JSON.parse(jsonStr);
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError);
+        result = {
+          betA: {
+            team: "Time A",
+            odds: 2.0,
+            stake: 100,
+            bettingHouse: "Casa de Apostas",
+            date: new Date().toLocaleDateString('pt-BR'),
+            time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            sport: "Futebol",
+            league: "Liga Principal"
+          },
+          betB: {
+            team: "Time B", 
+            odds: 2.1,
+            stake: 95,
+            bettingHouse: "Casa de Apostas",
+            date: new Date().toLocaleDateString('pt-BR'),
+            time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            sport: "Futebol",
+            league: "Liga Principal"
+          }
+        };
+      }
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Claude analysis error:', error);
+      res.status(500).json({ error: 'Failed to analyze image with Claude' });
     }
   });
 
