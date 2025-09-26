@@ -114,46 +114,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
 
       const response = await anthropic.messages.create({
-        model: "claude-3-haiku-20240307", // Mantendo Haiku para velocidade
-        max_tokens: 1000,  // Aumentado conforme seu JSON
+        model: "claude-3-haiku-20240307", // Conforme seu JSON
+        max_tokens: 800,  // Conforme seu JSON
         messages: [{
           role: "user",
           content: [
             {
               type: "text",
-              text: `Analise esta imagem de surebet e extraia EXATAMENTE os dados mostrados. Retorne APENAS no formato especificado abaixo, sem texto adicional.
+              text: `Extraia os dados desta imagem de surebet preservando TODOS os caracteres especiais, acentos e símbolos:
 
-Formato de resposta OBRIGATÓRIO (copie exatamente esta estrutura):
+1. DATA E HORA: Do cabeçalho azul entre parênteses (AAAA-MM-DD HH:MM -03:00) extraia data DD/MM/AAAA e hora HH:MM
 
-Data do evento: 26/09/2025
-Hora: 15:45
+2. TIMES: Procure o traço longo (–). Antes = Time A, Após = Time B. Preserve acentos (ã, ç, á, é, etc)
 
-Time A: OH Leuven
-Time B: Anderlecht
+3. APOSTAS: Para cada linha:
+   - Casa: Nome completo preservando (BR) e acentos
+   - Tipo: Copie EXATAMENTE da coluna 'Chance' incluindo:
+     * Símbolos: ≥ ≤ > < = ± ÷ × 
+     * Ordinais: 1º 2º 3º com º
+     * Elevados: ² ³ ⁴ etc
+     * Acentos: ã ç á é í ó ú
+     * Todos outros símbolos especiais
+   - Odd: Número com ponto decimal
+   - Valor da Aposta: Número USD
+   - Lucro: Número da última coluna
+
+4. LUCRO%: Porcentagem do canto direito
+
+IMPORTANTE: Mantenha caracteres especiais EXATAMENTE como aparecem na imagem.
+
+Formato:
+
+Data do evento: DD/MM/AAAA
+Hora: HH:MM
+
+Time A: [time com acentos]
+Time B: [time com acentos]
 
 Aposta 1
-Casa: Cassino (BR)
-Tipo: Acima 2.25
-Odd: 1.84
-Valor da Aposta: 2650.00
-Lucro: 106.00
+Casa: [casa completa]
+Tipo: [chance com símbolos]
+Odd: [odd]
+Valor da Aposta: [valor]
+Lucro: [lucro]
 
 Aposta 2
-Casa: Betano (BR)
-Tipo: Abaixo 2.25
-Odd: 2.30
-Valor da Aposta: 2120.00
-Lucro: 106.00
+Casa: [casa completa]
+Tipo: [chance com símbolos]
+Odd: [odd]
+Valor da Aposta: [valor]
+Lucro: [lucro]
 
-Lucro%: 2.22
-
-REGRAS IMPORTANTES:
-- Substitua APENAS os valores pelos dados da imagem atual
-- Para o campo 'Tipo': use EXATAMENTE o texto completo da coluna 'Chance' (ex: se aparecer 'Acima 44.5 1º o set', use isso completo no campo Tipo)
-- Mantenha EXATAMENTE a mesma estrutura e ordem mostrada acima
-- Use ponto decimal para números (não vírgula)
-- Não adicione explicações ou texto extra
-- Retorne APENAS os dados no formato especificado`
+Lucro%: [porcentagem]`
             },
             {
               type: "image",
