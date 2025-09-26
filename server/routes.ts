@@ -287,16 +287,29 @@ async function extractSurebetData(imageBase64: string, anthropic: any) {
           type: "text",
           text: `Analise esta captura de tela do SureBet Calculator e extraia EXATAMENTE os dados mostrados na interface.
 
-INSTRUÇÕES ESPECÍFICAS:
-1. DATA E HORA: Encontre a data/hora do jogo (formato DD/MM/YYYY) - NÃO use datas antigas, extraia a data REAL mostrada
-2. TIMES: Extraia os nomes dos times exatamente como mostrado (geralmente com "–" ou "vs" entre eles)
-3. ESPORTE/LIGA: Identifique o esporte e liga mostrados na interface
-4. CASAS DE APOSTAS: Extraia os nomes das casas (colunas da tabela)
-5. TIPOS DE APOSTA: Extraia EXATAMENTE o texto da coluna "Chance" ou tipo de aposta - não invente texto
-6. ODDS: Números das odds exatos da tabela
-7. STAKES: Valores investidos em cada aposta (coluna valor)
-8. LUCRO: Valores de lucro mostrados
-9. PORCENTAGEM: Porcentagem de lucro total (geralmente no topo)
+INSTRUÇÕES ESPECÍFICAS PARA LOCALIZAÇÃO DOS DADOS:
+
+1. DATA E HORA: 
+   - Procure no TOPO da interface por texto como "Evento em aproximadamente X horas (YYYY-MM-DD HH:MM)"
+   - OU procure por qualquer data visível no formato ISO (YYYY-MM-DD) ou brasileiro (DD/MM/YYYY)
+   - Extraia EXATAMENTE a data mostrada na interface, independente do ano
+   - Converta sempre para formato DD/MM/YYYY no JSON
+
+2. TIMES: Extraia os nomes dos times exatamente como mostrado no título (geralmente com "–" separando)
+
+3. ESPORTE/LIGA: Texto logo abaixo dos times (ex: "Beisebol / Estados Unidos - MLB")
+
+4. CASAS DE APOSTAS: Nomes nas linhas da tabela (ex: "MarjoSports (BR)", "Br4bet (BR)")
+
+5. TIPOS DE APOSTA: Texto EXATO da coluna "Chance" (ex: "Acima 3.5 Tempo Extra 2º o time")
+
+6. ODDS: Números na tabela depois do tipo de aposta
+
+7. STAKES: Valores na coluna "Aposta" 
+
+8. LUCRO: Valores na coluna "Lucro"
+
+9. PORCENTAGEM: Valor percentual no canto superior direito (ex: "3.43%")
 
 Retorne APENAS JSON válido no formato:
 
@@ -324,10 +337,16 @@ Retorne APENAS JSON válido no formato:
   "totalProfitPercentage": "X.XX%"
 }
 
-IMPORTANTE: 
-- Use dados REAIS da imagem, não exemplos
+CRÍTICO - REGRAS PARA DATA:
+- Extraia EXATAMENTE a data mostrada na interface (qualquer ano: 2024, 2025, 2026, etc.)
+- Se vir "Evento em aproximadamente X horas (YYYY-MM-DD HH:MM)" use essa data REAL
+- Converta YYYY-MM-DD para DD/MM/YYYY no JSON (ex: 2025-09-26 → 26/09/2025)
+- NUNCA invente ou altere datas - use apenas o que está visível
+- Se não encontrar data clara, deixe o campo vazio ""
+
+OUTRAS REGRAS:
+- Use dados REAIS da imagem, não exemplos  
 - Mantenha formatação original dos tipos de aposta
-- Use data atual da interface, não datas antigas
 - Preserve acentos e caracteres especiais
 - Use apenas números com pontos decimais (formato americano)`
         },
