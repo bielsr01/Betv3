@@ -99,10 +99,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? imageBase64.split('base64,')[1] 
         : imageBase64;
 
-      // Determine image media type
-      let mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif" = 'image/jpeg';
-      if (imageBase64.includes('data:image/png')) mediaType = 'image/png';
-      else if (imageBase64.includes('data:image/webp')) mediaType = 'image/webp';
+      // Determine image media type using helper function
+      const mediaType = detectImageMediaType(imageBase64);
 
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({
@@ -170,10 +168,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? imageBase64.split('base64,')[1] 
         : imageBase64;
 
-      // Determine image media type
-      let mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif" = 'image/jpeg';
-      if (imageBase64.includes('data:image/png')) mediaType = 'image/png';
-      else if (imageBase64.includes('data:image/webp')) mediaType = 'image/webp';
+      // Determine image media type using helper function
+      const mediaType = detectImageMediaType(imageBase64);
 
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({
@@ -275,4 +271,27 @@ Focus on: team names, odds (decimal format), stakes, betting houses, dates (DD-M
   const httpServer = createServer(app);
 
   return httpServer;
+}
+
+// Helper function to detect image media type from base64 data
+function detectImageMediaType(imageBase64: string): "image/jpeg" | "image/png" | "image/webp" | "image/gif" {
+  // Check data URL prefix first
+  if (imageBase64.includes('data:image/png')) return 'image/png';
+  if (imageBase64.includes('data:image/webp')) return 'image/webp';
+  if (imageBase64.includes('data:image/gif')) return 'image/gif';
+  if (imageBase64.includes('data:image/jpeg') || imageBase64.includes('data:image/jpg')) return 'image/jpeg';
+
+  // Extract clean base64 and check magic bytes
+  const cleanBase64 = imageBase64.includes('base64,') 
+    ? imageBase64.split('base64,')[1] 
+    : imageBase64;
+  
+  // Check base64 magic bytes (first few characters decode to specific bytes)
+  if (cleanBase64.startsWith('iVBOR')) return 'image/png';         // PNG magic: 89 50 4E 47
+  if (cleanBase64.startsWith('R0lGOD')) return 'image/gif';        // GIF magic: 47 49 46 38
+  if (cleanBase64.startsWith('UklGR')) return 'image/webp';        // WEBP magic: 52 49 46 46
+  if (cleanBase64.startsWith('/9j/') || cleanBase64.startsWith('FFD8')) return 'image/jpeg';  // JPEG magic
+  
+  // Default fallback
+  return 'image/jpeg';
 }
