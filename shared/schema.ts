@@ -148,7 +148,7 @@ export const validateBetPair = (betA: Partial<Bet>, betB: Partial<Bet>) => {
     errors.push("Times devem ser iguais em ambas as apostas");
   }
   
-  if (betA.selectedSide === betB.selectedSide) {
+  if (betA.betPosition === betB.betPosition) {
     errors.push("Apostas devem ser em lados opostos");
   }
   

@@ -74,7 +74,7 @@ const parseOCRText = (text: string): OCRData => {
       teamA: '',
       teamB: '',
       betType: '',
-      selectedSide: 'A',
+
       odds: '0',
       stake: '0',
       payout: '0',
@@ -85,7 +85,7 @@ const parseOCRText = (text: string): OCRData => {
       teamA: '',
       teamB: '',
       betType: '',
-      selectedSide: 'B',
+
       odds: '0',
       stake: '0',
       payout: '0',
@@ -322,7 +322,7 @@ const convertClaudeToOCRFormat = (claudeData: any): OCRData => {
       teamA: claudeData.teamA || '',
       teamB: claudeData.teamB || '',
       betType: claudeData.betA.betType || '',
-      selectedSide: 'A',
+
       odds: claudeData.betA.odds || '0',
       stake: claudeData.betA.stake || '0',
       payout: betAPayout,
@@ -333,7 +333,7 @@ const convertClaudeToOCRFormat = (claudeData: any): OCRData => {
       teamA: claudeData.teamA || '',
       teamB: claudeData.teamB || '',
       betType: claudeData.betB.betType || '',
-      selectedSide: 'B',
+
       odds: claudeData.betB.odds || '0',
       stake: claudeData.betB.stake || '0',
       payout: betBPayout,
@@ -429,7 +429,6 @@ export default function BetTracker() {
         teamA: data.betA.teamA,
         teamB: data.betA.teamB,
         betType: data.betA.betType,
-        selectedSide: data.betA.selectedSide,
         odds: data.betA.odds,
         stake: data.betA.stake,
         payout: data.betA.payout,
@@ -448,7 +447,6 @@ export default function BetTracker() {
         teamA: data.betB.teamA,
         teamB: data.betB.teamB,
         betType: data.betB.betType,
-        selectedSide: data.betB.selectedSide,
         odds: data.betB.odds,
         stake: data.betB.stake,
         payout: data.betB.payout,
