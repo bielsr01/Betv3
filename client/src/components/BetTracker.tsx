@@ -74,10 +74,8 @@ const parseOCRText = (text: string): OCRData => {
       teamA: '',
       teamB: '',
       betType: '',
-
       odds: '0',
       stake: '0',
-      payout: '0',
       profit: '0'
     },
     betB: {
@@ -85,10 +83,8 @@ const parseOCRText = (text: string): OCRData => {
       teamA: '',
       teamB: '',
       betType: '',
-
       odds: '0',
       stake: '0',
-      payout: '0',
       profit: '0'
     },
     gameDate: new Date(),
@@ -185,7 +181,7 @@ const parseOCRText = (text: string): OCRData => {
         // Calculate payout and profit
         if (result.betA.odds && result.betA.stake) {
           const payout = parseFloat(result.betA.stake) * parseFloat(result.betA.odds);
-          result.betA.payout = payout.toFixed(2);
+          // Payout calculation: already handled in profit calculation
           result.betA.profit = (payout - parseFloat(result.betA.stake)).toFixed(2);
         }
       }
@@ -210,7 +206,7 @@ const parseOCRText = (text: string): OCRData => {
         // Calculate payout and profit
         if (result.betB.odds && result.betB.stake) {
           const payout = parseFloat(result.betB.stake) * parseFloat(result.betB.odds);
-          result.betB.payout = payout.toFixed(2);
+          // Payout calculation: already handled in profit calculation
           result.betB.profit = (payout - parseFloat(result.betB.stake)).toFixed(2);
         }
       }
@@ -263,21 +259,19 @@ const parseOCRText = (text: string): OCRData => {
       }
     }
     
-    // Calculate payouts for both bets: payout = stake × odds
+    // Calculate profit if not extracted: profit = (stake × odds) - stake
     if (result.betA.odds && result.betA.stake) {
-      const payout = parseFloat(result.betA.stake) * parseFloat(result.betA.odds);
-      result.betA.payout = payout.toFixed(2);
       // If profit wasn't extracted, calculate it
       if (!result.betA.profit || result.betA.profit === '0') {
+        const payout = parseFloat(result.betA.stake) * parseFloat(result.betA.odds);
         result.betA.profit = (payout - parseFloat(result.betA.stake)).toFixed(2);
       }
     }
     
     if (result.betB.odds && result.betB.stake) {
-      const payout = parseFloat(result.betB.stake) * parseFloat(result.betB.odds);
-      result.betB.payout = payout.toFixed(2);
       // If profit wasn't extracted, calculate it
       if (!result.betB.profit || result.betB.profit === '0') {
+        const payout = parseFloat(result.betB.stake) * parseFloat(result.betB.odds);
         result.betB.profit = (payout - parseFloat(result.betB.stake)).toFixed(2);
       }
     }
@@ -293,28 +287,11 @@ const parseOCRText = (text: string): OCRData => {
 
 // Helper function to convert Claude response to our format - NO FALLBACKS
 const convertClaudeToOCRFormat = (claudeData: any): OCRData => {
-  // Calculate payouts: payout = stake × odds
-  const betAPayout = claudeData.betA.stake && claudeData.betA.odds ? 
-    (parseFloat(claudeData.betA.stake) * parseFloat(claudeData.betA.odds)).toFixed(2) : '0';
-  const betBPayout = claudeData.betB.stake && claudeData.betB.odds ? 
-    (parseFloat(claudeData.betB.stake) * parseFloat(claudeData.betB.odds)).toFixed(2) : '0';
-
   // Clean percentage value - remove % symbol if present
   const cleanPercentage = (claudeData.totalProfitPercentage || '0').replace('%', '');
 
-  // Parse game date from DD/MM/YYYY format to Date object
-  const parsedDate = claudeData.gameDate ? 
-    (() => {
-      const parts = claudeData.gameDate.split('/');
-      if (parts.length === 3) {
-        // DD/MM/YYYY -> YYYY-MM-DD
-        const day = parts[0];
-        const month = parts[1]; 
-        const year = parts[2];
-        return new Date(`${year}-${month}-${day}`);
-      }
-      return new Date();
-    })() : new Date();
+  // Convert DD/MM/YYYY to DD-MM-YYYY format for schema compatibility
+  const gameDate = claudeData.gameDate ? claudeData.gameDate.replace(/\//g, '-') : '';
 
   return {
     betA: {
@@ -322,10 +299,8 @@ const convertClaudeToOCRFormat = (claudeData: any): OCRData => {
       teamA: claudeData.teamA || '',
       teamB: claudeData.teamB || '',
       betType: claudeData.betA.betType || '',
-
       odds: claudeData.betA.odds || '0',
       stake: claudeData.betA.stake || '0',
-      payout: betAPayout,
       profit: claudeData.betA.profit || '0'
     },
     betB: {
@@ -333,13 +308,11 @@ const convertClaudeToOCRFormat = (claudeData: any): OCRData => {
       teamA: claudeData.teamA || '',
       teamB: claudeData.teamB || '',
       betType: claudeData.betB.betType || '',
-
       odds: claudeData.betB.odds || '0',
       stake: claudeData.betB.stake || '0',
-      payout: betBPayout,
       profit: claudeData.betB.profit || '0'
     },
-    gameDate: parsedDate,
+    gameDate: gameDate,
     gameTime: claudeData.gameTime || '00:00',
     sport: claudeData.sport || '',
     league: claudeData.league || '',
@@ -416,8 +389,8 @@ export default function BetTracker() {
       // Calculate pair metrics
       const stakeA = Number(data.betA.stake);
       const stakeB = Number(data.betB.stake);
-      const payoutA = Number(data.betA.payout);
-      const payoutB = Number(data.betB.payout);
+      const payoutA = Number(data.betA.stake) * Number(data.betA.odds);
+      const payoutB = Number(data.betB.stake) * Number(data.betB.odds);
       const totalStake = stakeA + stakeB;
       // Profit percentage if this bet wins: (winning payout - total invested) / total invested
       const profitPercentageA = totalStake > 0 ? ((payoutA - totalStake) / totalStake) * 100 : 0;
@@ -431,7 +404,7 @@ export default function BetTracker() {
         betType: data.betA.betType,
         odds: data.betA.odds,
         stake: data.betA.stake,
-        payout: data.betA.payout,
+        payout: (Number(data.betA.stake) * Number(data.betA.odds)).toFixed(2),
         gameDate: data.gameDate,
         status: 'pending' as const,
         isVerified: true,
@@ -449,7 +422,7 @@ export default function BetTracker() {
         betType: data.betB.betType,
         odds: data.betB.odds,
         stake: data.betB.stake,
-        payout: data.betB.payout,
+        payout: (Number(data.betB.stake) * Number(data.betB.odds)).toFixed(2),
         gameDate: data.gameDate,
         status: 'pending' as const,
         isVerified: true,
