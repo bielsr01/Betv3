@@ -145,8 +145,18 @@ export default function OCRVerification({
       return formData.gameDateFormatted;
     }
     if (formData.gameDate) {
+      // Handle DD/MM/YYYY format that Claude returns
+      if (typeof formData.gameDate === 'string' && formData.gameDate.includes('/')) {
+        // Convert DD/MM/YYYY to DD-MM-YYYY for display
+        return formData.gameDate.replace(/\//g, '-');
+      }
       // Fallback to standard date formatting (no time)
-      return format(new Date(formData.gameDate), 'dd-MM-yyyy', { locale: ptBR });
+      try {
+        return format(new Date(formData.gameDate), 'dd-MM-yyyy', { locale: ptBR });
+      } catch (error) {
+        console.warn('Error formatting date:', formData.gameDate, error);
+        return formData.gameDate?.toString() || null;
+      }
     }
     return null;
   };
@@ -158,11 +168,28 @@ export default function OCRVerification({
       if (formData.gameDate instanceof Date) {
         return formData.gameDate;
       }
-      // If gameDate is a string (DD-MM-YYYY), convert to Date with UTC to avoid timezone offset
+      // If gameDate is a string, handle both DD/MM/YYYY and DD-MM-YYYY formats
       if (typeof formData.gameDate === 'string') {
-        const [day, month, year] = formData.gameDate.split('-');
-        // CORRIGIDO: Usar UTC para evitar timezone offset de 1 dia
-        return new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day)));
+        let day: string, month: string, year: string;
+        
+        if (formData.gameDate.includes('/')) {
+          // Handle DD/MM/YYYY format from Claude
+          [day, month, year] = formData.gameDate.split('/');
+        } else if (formData.gameDate.includes('-')) {
+          // Handle DD-MM-YYYY format
+          [day, month, year] = formData.gameDate.split('-');
+        } else {
+          console.warn('Unexpected date format:', formData.gameDate);
+          return undefined;
+        }
+        
+        // Convert to Date using UTC to avoid timezone offset
+        try {
+          return new Date(Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day)));
+        } catch (error) {
+          console.warn('Error parsing date:', formData.gameDate, error);
+          return undefined;
+        }
       }
     }
     return undefined;
