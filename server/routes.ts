@@ -290,10 +290,10 @@ async function extractSurebetData(imageBase64: string, anthropic: any) {
 INSTRUÇÕES ESPECÍFICAS PARA LOCALIZAÇÃO DOS DADOS:
 
 1. DATA E HORA: 
-   - Procure no TOPO da interface por texto como "Evento em aproximadamente X horas (YYYY-MM-DD HH:MM)"
-   - OU procure por qualquer data visível no formato ISO (YYYY-MM-DD) ou brasileiro (DD/MM/YYYY)
-   - Extraia EXATAMENTE a data mostrada na interface, independente do ano
-   - Converta sempre para formato DD/MM/YYYY no JSON
+   - Procure ESPECIFICAMENTE por texto entre PARÊNTESES no topo: "(YYYY-MM-DD HH:MM"
+   - Exemplo: se vir "(2025-09-27 22:00" extraia exatamente 2025-09-27
+   - A data está SEMPRE entre parênteses após "Evento em X dia(s)"
+   - Converta YYYY-MM-DD para DD/MM/YYYY no JSON (ex: 2025-09-27 → 27/09/2025)
 
 2. TIMES: Extraia os nomes dos times exatamente como mostrado no título (geralmente com "–" separando)
 
@@ -301,7 +301,10 @@ INSTRUÇÕES ESPECÍFICAS PARA LOCALIZAÇÃO DOS DADOS:
 
 4. CASAS DE APOSTAS: Nomes nas linhas da tabela (ex: "MarjoSports (BR)", "Br4bet (BR)")
 
-5. TIPOS DE APOSTA: Texto EXATO da coluna "Chance" (ex: "Acima 3.5 Tempo Extra 2º o time")
+5. TIPOS DE APOSTA: Extraia EXATAMENTE o texto da coluna "Chance" PRESERVANDO todos os caracteres especiais:
+   - Mantenha símbolos: ≥ (maior ou igual), ≤ (menor ou igual), + (mais), - (menos)
+   - Exemplo: "Total ≥4 - cartões 2º o time" (NÃO altere para "Total 2+" ou similar)
+   - Preserve acentos e formatação original: "2º o time" (NÃO "2ª time")
 
 6. ODDS: Números na tabela depois do tipo de aposta
 
@@ -309,7 +312,9 @@ INSTRUÇÕES ESPECÍFICAS PARA LOCALIZAÇÃO DOS DADOS:
 
 8. LUCRO: Valores na coluna "Lucro"
 
-9. PORCENTAGEM: Valor percentual no canto superior direito (ex: "3.43%")
+9. PORCENTAGEM: Valor percentual EXATO no canto superior direito da interface
+   - Procure por texto como "1.45%" próximo ao "ROI: XXX.XX%"
+   - Extraia o valor REAL mostrado, não invente porcentagens
 
 Retorne APENAS JSON válido no formato:
 
@@ -344,11 +349,13 @@ CRÍTICO - REGRAS PARA DATA:
 - NUNCA invente ou altere datas - use apenas o que está visível
 - Se não encontrar data clara, deixe o campo vazio ""
 
-OUTRAS REGRAS:
-- Use dados REAIS da imagem, não exemplos  
-- Mantenha formatação original dos tipos de aposta
-- Preserve acentos e caracteres especiais
-- Use apenas números com pontos decimais (formato americano)`
+OUTRAS REGRAS CRÍTICAS:
+- Use dados REAIS da imagem, não exemplos ou interpretações
+- Mantenha formatação original EXATA dos tipos de aposta
+- PRESERVE caracteres especiais: ≥, ≤, ±, ×, ÷, →, ←, ↑, ↓
+- PRESERVE acentos e ordinais: "2º" não "2ª", "México" não "Mexico"
+- Use apenas números com pontos decimais (formato americano)
+- NUNCA simplifique ou traduza texto dos tipos de aposta`
         },
         {
           type: "image",
