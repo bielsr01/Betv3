@@ -26,36 +26,9 @@ export default function OCRVerification({
   onCancel, 
   isLoading 
 }: OCRVerificationProps) {
-  // Initialize form data with proper date handling for DD-MM-YYYY format
+  // Initialize form data - Claude returns correct format, no conversion needed
   const initializeFormData = (data: OCRData): OCRData => {
-    const initialData = { ...data };
-    
-    // If we have a formatted DD-MM-YYYY date, ensure the gameDate is properly set
-    if (data.gameDateFormatted && !data.gameDate) {
-      try {
-        // Convert DD-MM-YYYY to proper Date object (avoiding timezone issues)
-        const [day, month, year] = data.gameDateFormatted.split('-');
-        // Use noon to avoid timezone conversion issues
-        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0);
-        initialData.gameDate = dateObj;
-      } catch (error) {
-        console.error('Failed to parse formatted date:', data.gameDateFormatted, error);
-      }
-    }
-    
-    // If we have a gameDate string from backend (YYYY-MM-DD), convert properly
-    if (typeof data.gameDate === 'string' && data.gameDate.includes('-')) {
-      try {
-        // Convert YYYY-MM-DD to Date object (avoiding timezone issues)
-        const [year, month, day] = data.gameDate.split('-');
-        const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0);
-        initialData.gameDate = dateObj;
-      } catch (error) {
-        console.error('Failed to parse gameDate string:', data.gameDate, error);
-      }
-    }
-    
-    return initialData;
+    return { ...data };
   };
 
   const [formData, setFormData] = useState<OCRData>(initializeFormData(ocrData));
@@ -184,10 +157,10 @@ export default function OCRVerification({
       if (formData.gameDate instanceof Date) {
         return formData.gameDate;
       }
-      // If gameDate is a string (YYYY-MM-DD), convert it properly avoiding timezone issues
+      // If gameDate is a string (DD-MM-YYYY), convert to Date
       if (typeof formData.gameDate === 'string') {
-        const [year, month, day] = formData.gameDate.split('-');
-        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 12, 0, 0);
+        const [day, month, year] = formData.gameDate.split('-');
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
       }
     }
     return undefined;
@@ -270,19 +243,7 @@ export default function OCRVerification({
             )}
           </div>
 
-          {/* Selected Side */}
-          <div className="space-y-2">
-            <Label htmlFor={`${bet}-side`}>Lado Selecionado</Label>
-            <Select value={betData.selectedSide} onValueChange={(value: 'A' | 'B') => updateBetField(bet, 'selectedSide', value)}>
-              <SelectTrigger data-testid={`select-${bet}-side`}>
-                <SelectValue placeholder="Selecione o lado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="A">Time A ({betData.teamA || 'Casa'})</SelectItem>
-                <SelectItem value="B">Time B ({betData.teamB || 'Visitante'})</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Note: selectedSide field removed from schema - bet type now contains this info */}
 
           {/* Financial Data */}
           <div className="grid grid-cols-4 gap-2">
@@ -320,21 +281,17 @@ export default function OCRVerification({
               )}
             </div>
 
+            {/* Payout calculated automatically from stake × odds */}
             <div className="space-y-2">
-              <Label htmlFor={`${bet}-payout`}>Retorno (R$)</Label>
+              <Label>Retorno (R$)</Label>
               <Input
-                id={`${bet}-payout`}
-                type="number"
-                step="0.01"
-                value={betData.payout}
-                onChange={(e) => updateBetField(bet, 'payout', e.target.value)}
-                placeholder="250.00"
-                className={errors[`${bet}.payout`] ? 'border-destructive' : ''}
-                data-testid={`input-${bet}-payout`}
+                type="text"
+                value={betData.stake && betData.odds ? 
+                  (parseFloat(betData.stake) * parseFloat(betData.odds)).toFixed(2) : '0.00'}
+                disabled
+                className="bg-muted"
+                placeholder="Calculado automaticamente"
               />
-              {errors[`${bet}.payout`] && (
-                <p className="text-sm text-destructive">{errors[`${bet}.payout`]}</p>
-              )}
             </div>
 
             <div className="space-y-2">
